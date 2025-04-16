@@ -491,21 +491,14 @@ export default function TeamsPage() {
                     {language === "en" ? "Name" : "Nom"}
                   </th>
                   <th className="px-6 py-4 text-left font-medium text-gray-500">
-                    {language === "en" ? "Volunteer Preferences" : "Préférences"}
-                  </th>
-                  <th className="px-6 py-4 text-left font-medium text-gray-500">
                     {language === "en" ? "Assigned Team" : "Équipe Assignée"}
                   </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
                 {volunteers.map((volunteer) => (
-                  <tr key={volunteer.id} className={volunteer.preferences.length > 0 ? "bg-yellow-50" : ""}>
-                    <td className="px-6 py-4">
-                      {volunteer.preferences.length > 0 && <span className="mr-2">★</span>}
-                      {volunteer.name}
-                    </td>
-                    <td className="px-6 py-4">{volunteer.preferences.join(", ")}</td>
+                  <tr key={volunteer.id}>
+                    <td className="px-6 py-4">{volunteer.name}</td>
                     <td className="px-6 py-4">
                       <Select
                         value={volunteer.assigned}
