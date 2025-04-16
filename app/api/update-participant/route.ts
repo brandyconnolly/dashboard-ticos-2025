@@ -137,7 +137,15 @@ export async function POST(request: Request) {
     })
 
     // Add more detailed console logs to help with debugging
-    console.log(`Updating participant ${participant.id} (${participant.name}) roles to: ${rolesValue || "NONE"}`)
+    console.log(
+      `Setting roles in spreadsheet cell ${columnToLetter(rolesColumnIndex + 1)}${rowIndex + 1} to: "${rolesValue}"`,
+    )
+
+    // Add more detailed console logs to help with debugging
+    console.log(`Updating participant ${participant.id} (${participant.name}):`)
+    console.log(`- Roles: ${participant.roles.length > 0 ? participant.roles.join(",") : "NONE"}`)
+    console.log(`- Color Team: ${participant.colorTeam || "NONE"}`)
+    console.log(`- Checked In: ${participant.checkedIn ? "YES" : "NO"}`)
 
     // Update color team
     dataUpdates.push({

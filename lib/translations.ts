@@ -86,6 +86,7 @@ const translations = {
   save_comments: { en: "Save Comments", fr: "Enregistrer les commentaires" },
   registration_form: { en: "Registration Form", fr: "Formulaire d'inscription" },
   payments: { en: "Payments", fr: "Paiements" },
+  save_changes: { en: "Save Changes", fr: "Enregistrer les modifications" },
 
   // Data Management
   data_management: { en: "Data Management", fr: "Gestion des données" },

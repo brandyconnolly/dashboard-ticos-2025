@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -30,6 +30,20 @@ export default function ParticipantProfileModal({
   allParticipants,
 }: ParticipantProfileModalProps) {
   const { language } = useLanguage()
+  // First, let's modify the state management to track all changes before saving
+  // Add a new state to track if there are unsaved changes
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [participantState, setParticipantState] = useState<Participant>(
+    participant || {
+      id: "",
+      name: "",
+      ageGroup: "adult",
+      familyId: 0,
+      roles: [],
+      checkedIn: false,
+      isPrimaryContact: false,
+    },
+  )
   const [comments, setComments] = useState(participant?.comments || "")
   const [attendance, setAttendance] = useState(
     participant?.attendance || {
@@ -38,20 +52,34 @@ export default function ParticipantProfileModal({
     },
   )
 
+  // Update the useEffect to initialize the state when the participant changes
+  useEffect(() => {
+    if (participant) {
+      setParticipantState(participant)
+      setComments(participant.comments || "")
+      setAttendance(
+        participant.attendance || {
+          fullAttendance: true,
+          days: { friday: true, saturday: true, sunday: true },
+        },
+      )
+      setHasUnsavedChanges(false)
+    }
+  }, [participant])
+
   if (!participant) return null
 
   const familyMembers = allParticipants.filter((p) => p.familyId === participant.familyId && p.id !== participant.id)
 
-  // Update the handleUpdateComments function to save immediately
+  // Replace the individual update functions with ones that update the local state
   const handleUpdateComments = () => {
-    const updatedParticipant = {
-      ...participant,
+    setParticipantState((prev) => ({
+      ...prev,
       comments,
-    }
-    onUpdate(updatedParticipant)
+    }))
+    setHasUnsavedChanges(true)
   }
 
-  // Update the handleAttendanceChange function to save immediately
   const handleAttendanceChange = (day: "friday" | "saturday" | "sunday", value: boolean) => {
     const newAttendance = {
       ...attendance,
@@ -65,14 +93,13 @@ export default function ParticipantProfileModal({
     newAttendance.fullAttendance = newAttendance.days.friday && newAttendance.days.saturday && newAttendance.days.sunday
 
     setAttendance(newAttendance)
-
-    onUpdate({
-      ...participant,
+    setParticipantState((prev) => ({
+      ...prev,
       attendance: newAttendance,
-    })
+    }))
+    setHasUnsavedChanges(true)
   }
 
-  // Update the handleToggleFullAttendance function to save immediately
   const handleToggleFullAttendance = () => {
     const newFullAttendance = !attendance.fullAttendance
 
@@ -86,11 +113,44 @@ export default function ParticipantProfileModal({
     }
 
     setAttendance(newAttendance)
-
-    onUpdate({
-      ...participant,
+    setParticipantState((prev) => ({
+      ...prev,
       attendance: newAttendance,
-    })
+    }))
+    setHasUnsavedChanges(true)
+  }
+
+  // Add a new function to handle role updates
+  const handleRoleUpdate = (updatedParticipant: Participant) => {
+    setParticipantState((prev) => ({
+      ...prev,
+      roles: updatedParticipant.roles,
+      customRole: updatedParticipant.customRole,
+    }))
+    setHasUnsavedChanges(true)
+  }
+
+  // Add a new function to handle color team updates
+  const handleColorTeamUpdate = (updatedParticipant: Participant) => {
+    setParticipantState((prev) => ({
+      ...prev,
+      colorTeam: updatedParticipant.colorTeam,
+    }))
+    setHasUnsavedChanges(true)
+  }
+
+  // Add a new function to save all changes
+  const saveAllChanges = () => {
+    // Create the final updated participant with all changes
+    const updatedParticipant = {
+      ...participantState,
+      comments,
+      attendance,
+    }
+
+    // Call the parent component's onUpdate function
+    onUpdate(updatedParticipant)
+    setHasUnsavedChanges(false)
   }
 
   const getAgeGroupLabel = (ageGroup: string) => {
@@ -172,13 +232,13 @@ export default function ParticipantProfileModal({
           {/* Roles */}
           <div className="grid gap-2">
             <h3 className="text-lg font-medium">{getTranslation("roles", language)}</h3>
-            <RoleEditor participant={participant} onUpdate={onUpdate} language={language} />
+            <RoleEditor participant={participantState} onUpdate={handleRoleUpdate} language={language} />
           </div>
 
           {/* Color Team */}
           <div className="grid gap-2">
             <h3 className="text-lg font-medium">{getTranslation("color_team", language)}</h3>
-            <ColorTeamEditor participant={participant} onUpdate={onUpdate} language={language} />
+            <ColorTeamEditor participant={participantState} onUpdate={handleColorTeamUpdate} language={language} />
           </div>
 
           {/* Attendance */}
@@ -226,14 +286,24 @@ export default function ParticipantProfileModal({
             <h3 className="text-lg font-medium">{getTranslation("special_considerations", language)}</h3>
             <Textarea
               value={comments}
-              onChange={(e) => setComments(e.target.value)}
+              onChange={(e) => {
+                setComments(e.target.value)
+                setHasUnsavedChanges(true)
+              }}
               placeholder={getTranslation("enter_special_considerations", language)}
               rows={3}
             />
-            <Button onClick={handleUpdateComments} variant="outline">
-              {getTranslation("save_comments", language)}
-            </Button>
           </div>
+        </div>
+        <div className="mt-6 flex justify-end">
+          <Button
+            onClick={saveAllChanges}
+            className="w-full md:w-auto"
+            disabled={!hasUnsavedChanges}
+            variant={hasUnsavedChanges ? "default" : "outline"}
+          >
+            {getTranslation("save_changes", language)}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>
