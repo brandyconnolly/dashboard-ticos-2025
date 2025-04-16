@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { AlertTriangle, Edit, Plus, X, Loader2 } from "lucide-react"
+import { AlertTriangle, Edit, Plus, X, Loader2, Save } from "lucide-react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { toast } from "@/components/ui/use-toast"
 import DataStatus from "@/components/data-status"
 import { getParticipantsFromStorage, saveParticipantsToStorage } from "@/lib/storage-utils"
 import type { Participant, Role } from "@/lib/types"
@@ -39,6 +40,8 @@ export default function TeamsPage() {
   const [editingTeams, setEditingTeams] = useState(false)
   const [selectedVolunteer, setSelectedVolunteer] = useState<string | null>(null)
   const [editingRoles, setEditingRoles] = useState(false)
+  const [isSavingToSheets, setIsSavingToSheets] = useState(false)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
   // Team definitions
   const [functionalTeams, setFunctionalTeams] = useState([
@@ -126,6 +129,7 @@ export default function TeamsPage() {
           })
 
         setVolunteers(transformedVolunteers)
+        setHasUnsavedChanges(false)
       } catch (err) {
         console.error("Error loading data:", err)
         setError(err instanceof Error ? err.message : String(err))
@@ -195,6 +199,9 @@ export default function TeamsPage() {
           return v
         }),
       )
+
+      // Set unsaved changes flag
+      setHasUnsavedChanges(true)
     } catch (error) {
       console.error("Error toggling role:", error)
 
@@ -249,6 +256,9 @@ export default function TeamsPage() {
             : volunteer,
         ),
       )
+
+      // Set unsaved changes flag
+      setHasUnsavedChanges(true)
     } catch (error) {
       console.error("Error saving color team assignment:", error)
 
@@ -295,6 +305,74 @@ export default function TeamsPage() {
 
   // Get the selected volunteer safely
   const selectedVolunteerData = selectedVolunteer ? volunteers.find((v) => v.id === selectedVolunteer) : null
+
+  // Function to save all changes to Google Sheets
+  const saveChangesToGoogleSheets = async () => {
+    setIsSavingToSheets(true)
+
+    try {
+      // Get all participants from localStorage
+      const storedParticipants = getParticipantsFromStorage()
+      if (!storedParticipants) {
+        throw new Error("No participants found in localStorage")
+      }
+
+      // Filter to only get volunteers (adults and students)
+      const volunteersToUpdate = storedParticipants.filter(
+        (p) => p.ageGroup === "adult" || p.ageGroup === "student-15+",
+      )
+
+      // Create a counter for successful updates
+      let successCount = 0
+
+      // Update each volunteer one by one
+      for (const participant of volunteersToUpdate) {
+        try {
+          const response = await fetch("/api/update-participant", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(participant),
+          })
+
+          if (response.ok) {
+            successCount++
+          } else {
+            console.error(`Failed to update participant ${participant.id}: ${response.statusText}`)
+          }
+        } catch (error) {
+          console.error(`Error updating participant ${participant.id}:`, error)
+        }
+      }
+
+      // Show success message
+      toast({
+        title: language === "en" ? "Changes Saved" : "Modifications Enregistrées",
+        description:
+          language === "en"
+            ? `Successfully updated ${successCount} of ${volunteersToUpdate.length} volunteers in Google Sheets.`
+            : `Mise à jour réussie de ${successCount} sur ${volunteersToUpdate.length} volontaires dans Google Sheets.`,
+      })
+
+      // Reset unsaved changes flag
+      setHasUnsavedChanges(false)
+    } catch (error) {
+      console.error("Error saving changes to Google Sheets:", error)
+
+      // Show error message
+      toast({
+        variant: "destructive",
+        title: language === "en" ? "Error Saving Changes" : "Erreur lors de l'enregistrement",
+        description:
+          language === "en"
+            ? "Failed to save changes to Google Sheets. Please try again."
+            : "Échec de l'enregistrement des modifications dans Google Sheets. Veuillez réessayer.",
+      })
+    } finally {
+      setIsSavingToSheets(false)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -523,10 +601,31 @@ export default function TeamsPage() {
           </TabsContent>
         </Tabs>
 
-        <Button variant="outline" size="sm" onClick={() => setEditingTeams(true)}>
-          <Edit className="h-4 w-4 mr-2" />
-          {language === "en" ? "Edit Teams" : "Modifier les équipes"}
-        </Button>
+        <div className="flex flex-col gap-2">
+          <Button variant="outline" size="sm" onClick={() => setEditingTeams(true)}>
+            <Edit className="h-4 w-4 mr-2" />
+            {language === "en" ? "Edit Teams" : "Modifier les équipes"}
+          </Button>
+
+          <Button
+            size="sm"
+            onClick={saveChangesToGoogleSheets}
+            disabled={isSavingToSheets || !hasUnsavedChanges}
+            className={hasUnsavedChanges ? "bg-green-600 hover:bg-green-700" : ""}
+          >
+            {isSavingToSheets ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                {language === "en" ? "Saving..." : "Enregistrement..."}
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4 mr-2" />
+                {language === "en" ? "Save to Sheets" : "Enregistrer"}
+              </>
+            )}
+          </Button>
+        </div>
       </div>
 
       {/* Edit Teams Dialog */}
@@ -676,102 +775,6 @@ export default function TeamsPage() {
           )}
         </DialogContent>
       </Dialog>
-
-      {/* All Volunteers View */}
-      <div className="mt-8">
-        <h2 className="text-xl font-bold mb-4">{language === "en" ? "All Volunteers" : "Tous les Volontaires"}</h2>
-        <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-          <table className="w-full text-lg">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-4 text-left font-medium text-gray-500">{language === "en" ? "Name" : "Nom"}</th>
-                <th className="px-6 py-4 text-left font-medium text-gray-500">
-                  {language === "en" ? "Functional Teams" : "Équipes Fonctionnelles"}
-                </th>
-                <th className="px-6 py-4 text-left font-medium text-gray-500">
-                  {language === "en" ? "Color Team" : "Équipe de Couleur"}
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-200">
-              {volunteers.map((volunteer) => {
-                const currentColorTeam = colorTeamsList.find((t) => t.id === volunteer.colorTeam)
-                return (
-                  <tr key={volunteer.id}>
-                    <td className="px-6 py-4">{volunteer.name}</td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-1">
-                        {volunteer.roles.length > 0 ? (
-                          volunteer.roles.map((role) => (
-                            <Badge key={role} variant="outline" className="mr-1">
-                              {role}
-                            </Badge>
-                          ))
-                        ) : (
-                          <span className="text-gray-500">{language === "en" ? "None" : "Aucune"}</span>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            setSelectedVolunteer(volunteer.id)
-                            setEditingRoles(true)
-                          }}
-                        >
-                          <Edit className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      {currentColorTeam ? (
-                        <div className="flex items-center gap-2">
-                          <div className={`w-4 h-4 rounded-full ${currentColorTeam.color}`}></div>
-                          <span>{currentColorTeam.name[language]}</span>
-                        </div>
-                      ) : (
-                        <span className="text-gray-500">{language === "en" ? "None" : "Aucune"}</span>
-                      )}
-                      <Select
-                        value={volunteer.colorTeam || "none"}
-                        onValueChange={(value) => handleAssignColorTeam(volunteer.id, value)}
-                        disabled={volunteer.isSaving}
-                      >
-                        <SelectTrigger className="w-full mt-1">
-                          <SelectValue>
-                            {volunteer.isSaving ? (
-                              <div className="flex items-center">
-                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                                {language === "en" ? "Saving..." : "Enregistrement..."}
-                              </div>
-                            ) : language === "en" ? (
-                              "Change"
-                            ) : (
-                              "Modifier"
-                            )}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">
-                            {language === "en" ? "-- No Team --" : "-- Aucune équipe --"}
-                          </SelectItem>
-                          {colorTeamsList.map((team) => (
-                            <SelectItem key={team.id} value={team.id}>
-                              <div className="flex items-center gap-2">
-                                <div className={`w-3 h-3 rounded-full ${team.color}`}></div>
-                                <span>{team.name[language]}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
       {/* Dialog for editing roles */}
       <Dialog open={editingRoles} onOpenChange={setEditingRoles}>
