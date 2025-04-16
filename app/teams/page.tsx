@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import DataStatus from "@/components/data-status"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -12,7 +13,6 @@ import { parseParticipants, parseFamilies } from "@/lib/fetch-data"
 import type { Participant, Role } from "@/lib/types"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 // Import the storage utility functions
 import { saveParticipantsToStorage, getParticipantsFromStorage } from "@/lib/storage-utils"
@@ -378,6 +378,9 @@ export default function TeamsPage() {
       </div>
     )
   }
+
+  // Get the selected volunteer safely
+  const selectedVolunteerData = selectedVolunteer ? volunteers.find((v) => v.id === selectedVolunteer) : null
 
   return (
     <div>
@@ -868,13 +871,12 @@ export default function TeamsPage() {
           <DialogHeader>
             <DialogTitle>
               {language === "en" ? "Edit Teams for " : "Modifier les équipes pour "}
-              {selectedVolunteer && volunteers.find((v) => v.id === selectedVolunteer)?.name}
+              {selectedVolunteerData?.name || ""}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-4">
             {functionalTeams.map((team) => {
-              const volunteer = volunteers.find((v) => v.id === selectedVolunteer)
-              const isAssigned = volunteer?.roles.includes(team)
+              const isAssigned = selectedVolunteerData?.roles.includes(team) || false
 
               return (
                 <div key={team} className="flex items-center space-x-2">
