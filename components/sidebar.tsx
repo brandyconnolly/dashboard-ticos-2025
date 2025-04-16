@@ -16,6 +16,8 @@ import {
   Smartphone,
   Monitor,
   DollarSign,
+  Menu,
+  X,
 } from "lucide-react"
 import Image from "next/image"
 import { useLanguage } from "@/hooks/use-language"
@@ -106,35 +108,35 @@ export default function Sidebar() {
     return (
       <div className="bg-gray-800 text-white w-full">
         {/* Mobile header */}
-        <div className="flex justify-between items-center p-2 md:p-4 border-b border-gray-700">
-          <h1 className="text-lg md:text-xl font-bold truncate">
+        <div className="flex justify-between items-center p-3 border-b border-gray-700">
+          <h1 className="text-lg font-bold truncate">
             {language === "en" ? "TICOS Retreat 2025" : "Retraite TICOS 2025"}
           </h1>
-          <div className="flex gap-1 md:gap-2">
+          <div className="flex gap-2">
             <Button
               variant="outline"
               size="sm"
               onClick={toggleLanguage}
-              className="text-xs md:text-sm px-2 text-white border-white hover:text-white"
+              className="px-2 py-1 h-8 text-white border-gray-600 hover:bg-gray-700"
             >
-              <Globe className="h-3 w-3 md:h-4 md:w-4 mr-1 text-white" />
-              <span className="text-white">{language === "en" ? "EN" : "FR"}</span>
+              <Globe className="h-3 w-3 mr-1" />
+              {language === "en" ? "EN" : "FR"}
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={toggleViewMode}
-              className="text-xs md:text-sm px-2 text-white border-white hover:text-white"
+              className="px-2 py-1 h-8 text-white border-gray-600 hover:bg-gray-700"
             >
-              <Monitor className="h-3 w-3 md:h-4 md:w-4 text-white" />
+              {viewMode === "desktop" ? <Monitor className="h-3 w-3" /> : <Smartphone className="h-3 w-3" />}
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="text-xs md:text-sm px-2 text-white border-white hover:text-white"
+              className="px-2 py-1 h-8 text-white border-gray-600 hover:bg-gray-700"
             >
-              {mobileMenuOpen ? "✕" : "☰"}
+              {mobileMenuOpen ? <X className="h-3 w-3" /> : <Menu className="h-3 w-3" />}
             </Button>
           </div>
         </div>
@@ -171,23 +173,33 @@ export default function Sidebar() {
         <h1 className="text-xl font-bold truncate">
           {language === "en" ? "TICOS Retreat 2025" : "Retraite TICOS 2025"}
         </h1>
-        <div className="flex gap-2 mt-2">
+        <div className="flex gap-2 mt-3">
           <Button
             variant="outline"
             size="sm"
             onClick={toggleLanguage}
-            className="flex-1 text-sm md:text-lg text-white border-white hover:text-white"
+            className="flex-1 text-white border-gray-600 hover:bg-gray-700 hover:text-white"
           >
-            <Globe className="mr-1 h-4 w-4 text-white" />
-            <span className="text-white">{language === "en" ? "EN" : "FR"}</span>
+            <Globe className="mr-2 h-4 w-4" />
+            {language === "en" ? "English" : "Français"}
           </Button>
           <Button
             variant="outline"
             size="sm"
             onClick={toggleViewMode}
-            className="px-2 text-white border-white hover:text-white"
+            className="flex-1 text-white border-gray-600 hover:bg-gray-700 hover:text-white"
           >
-            <Smartphone className="h-4 w-4 text-white" />
+            {viewMode === "desktop" ? (
+              <>
+                <Smartphone className="mr-2 h-4 w-4" />
+                Mobile
+              </>
+            ) : (
+              <>
+                <Monitor className="mr-2 h-4 w-4" />
+                Desktop
+              </>
+            )}
           </Button>
         </div>
       </div>
