@@ -114,27 +114,24 @@ export default function Sidebar() {
           </h1>
           <div className="flex gap-2">
             <Button
-              variant="outline"
               size="sm"
               onClick={toggleLanguage}
-              className="px-2 py-1 h-8 text-white border-gray-600 hover:bg-gray-700"
+              className="px-2 py-1 h-8 bg-white text-blue-600 hover:bg-gray-100 flex items-center"
             >
               <Globe className="h-3 w-3 mr-1" />
-              {language === "en" ? "EN" : "FR"}
+              <span>{language === "en" ? "EN" : "FR"}</span>
             </Button>
             <Button
-              variant="outline"
               size="sm"
               onClick={toggleViewMode}
-              className="px-2 py-1 h-8 text-white border-gray-600 hover:bg-gray-700"
+              className="px-2 py-1 h-8 bg-white text-blue-600 hover:bg-gray-100 flex items-center"
             >
               {viewMode === "desktop" ? <Monitor className="h-3 w-3" /> : <Smartphone className="h-3 w-3" />}
             </Button>
             <Button
-              variant="outline"
               size="sm"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="px-2 py-1 h-8 text-white border-gray-600 hover:bg-gray-700"
+              className="px-2 py-1 h-8 bg-white text-blue-600 hover:bg-gray-100 flex items-center justify-center"
             >
               {mobileMenuOpen ? <X className="h-3 w-3" /> : <Menu className="h-3 w-3" />}
             </Button>
@@ -175,29 +172,27 @@ export default function Sidebar() {
         </h1>
         <div className="flex gap-2 mt-3">
           <Button
-            variant="outline"
             size="sm"
             onClick={toggleLanguage}
-            className="flex-1 text-white border-gray-600 hover:bg-gray-700 hover:text-white"
+            className="flex-1 bg-white text-blue-600 hover:bg-gray-100 flex items-center justify-center"
           >
             <Globe className="mr-2 h-4 w-4" />
             {language === "en" ? "English" : "Français"}
           </Button>
           <Button
-            variant="outline"
             size="sm"
             onClick={toggleViewMode}
-            className="flex-1 text-white border-gray-600 hover:bg-gray-700 hover:text-white"
+            className="flex-1 bg-white text-blue-600 hover:bg-gray-100 flex items-center justify-center"
           >
             {viewMode === "desktop" ? (
               <>
                 <Smartphone className="mr-2 h-4 w-4" />
-                Mobile
+                <span>Mobile</span>
               </>
             ) : (
               <>
                 <Monitor className="mr-2 h-4 w-4" />
-                Desktop
+                <span>Desktop</span>
               </>
             )}
           </Button>
