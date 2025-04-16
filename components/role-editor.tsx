@@ -62,8 +62,10 @@ export default function RoleEditor({ participant, onUpdate, language }: RoleEdit
 
     if (participant.roles.includes(role)) {
       updatedRoles = participant.roles.filter((r) => r !== role)
+      console.log(`Removing role ${role} from participant ${participant.id}`)
     } else {
       updatedRoles = [...participant.roles, role]
+      console.log(`Adding role ${role} to participant ${participant.id}`)
     }
 
     onUpdate({

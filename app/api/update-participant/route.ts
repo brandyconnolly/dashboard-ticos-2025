@@ -135,6 +135,9 @@ export async function POST(request: Request) {
       values: [[participant.roles.join(",")]],
     })
 
+    // Add a console log to help with debugging
+    console.log(`Updating participant ${participant.id} roles to: ${participant.roles.join(",")}`)
+
     // Update color team
     dataUpdates.push({
       range: `${firstSheetName}!${columnToLetter(colorTeamColumnIndex + 1)}${rowIndex + 1}`,
