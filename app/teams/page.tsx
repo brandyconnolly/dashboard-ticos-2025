@@ -3,9 +3,8 @@
 import { useState, useEffect } from "react"
 import DataStatus from "@/components/data-status"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Plus, Edit, AlertTriangle, Loader2, X } from "lucide-react"
 import Link from "next/link"
@@ -13,10 +12,11 @@ import { parseParticipants, parseFamilies } from "@/lib/fetch-data"
 import type { Participant, Role } from "@/lib/types"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 // Import the storage utility functions
 import { saveParticipantsToStorage, getParticipantsFromStorage } from "@/lib/storage-utils"
-import { saveFamiliesToStorage } from "../../lib/storage-utils"
+import { saveFamiliesToStorage } from "@/lib/storage-utils"
 
 // Volunteer type definition
 interface Volunteer {
@@ -57,7 +57,7 @@ export default function TeamsPage() {
   const [editingRoles, setEditingRoles] = useState(false)
 
   // Standardized role mapping
-  const roleToTeamMap = {
+  const roleToTeamMap: Record<string, string> = {
     "setup-crew": "Setup Crew",
     "cleanup-crew": "Cleanup Crew",
     "food-crew": "Food Committee",
@@ -67,7 +67,7 @@ export default function TeamsPage() {
     "worship-team": "Worship Team",
   }
 
-  const teamToRoleMap = {
+  const teamToRoleMap: Record<string, string> = {
     "Setup Crew": "setup-crew",
     "Cleanup Crew": "cleanup-crew",
     "Food Committee": "food-crew",
@@ -78,7 +78,7 @@ export default function TeamsPage() {
   }
 
   // Function to fetch data
-  async function fetchData() {
+  const fetchData = async () => {
     try {
       console.log("Fetching data for teams page")
       setIsLoading(true)
@@ -119,15 +119,15 @@ export default function TeamsPage() {
 
       // Transform participants into volunteers with standardized role mapping
       const transformedVolunteers: Volunteer[] = parsedParticipants
-        .filter((p) => p.ageGroup === "adult" || p.ageGroup === "student-15+") // Only adults and teens can be volunteers
+        .filter((p: Participant) => p.ageGroup === "adult" || p.ageGroup === "student-15+") // Only adults and teens can be volunteers
         .map((participant: Participant) => {
           // Extract roles using the standardized role mapping
           const roles: string[] = []
 
           // Map each role to its team name
           for (const role of participant.roles) {
-            if (roleToTeamMap[role as keyof typeof roleToTeamMap]) {
-              roles.push(roleToTeamMap[role as keyof typeof roleToTeamMap])
+            if (roleToTeamMap[role]) {
+              roles.push(roleToTeamMap[role])
             }
           }
 
@@ -160,7 +160,7 @@ export default function TeamsPage() {
     if (!volunteer) return
 
     // Mark this volunteer as saving
-    setVolunteers(volunteers.map((v) => (v.id === volunteerId ? { ...v, isSaving: true } : v)))
+    setVolunteers((prevVolunteers) => prevVolunteers.map((v) => (v.id === volunteerId ? { ...v, isSaving: true } : v)))
 
     try {
       // Get the participant from localStorage
@@ -175,7 +175,7 @@ export default function TeamsPage() {
       }
 
       // Get the role ID for this team
-      const roleId = teamToRoleMap[team as keyof typeof teamToRoleMap]
+      const roleId = teamToRoleMap[team]
       if (!roleId) {
         throw new Error(`No role mapping found for team: ${team}`)
       }
@@ -186,7 +186,7 @@ export default function TeamsPage() {
 
       if (hasRole) {
         // Remove the role
-        updatedRoles = participant.roles.filter((r) => r !== roleId)
+        updatedRoles = participant.roles.filter((r) => r !== roleId) as Role[]
       } else {
         // Add the role
         updatedRoles = [...participant.roles, roleId as Role]
@@ -216,8 +216,8 @@ export default function TeamsPage() {
       }
 
       // Update the volunteer in the UI
-      setVolunteers(
-        volunteers.map((v) => {
+      setVolunteers((prevVolunteers) =>
+        prevVolunteers.map((v) => {
           if (v.id === volunteerId) {
             const updatedRoles = hasRole ? v.roles.filter((r) => r !== team) : [...v.roles, team]
             return { ...v, roles: updatedRoles, isSaving: false }
@@ -236,15 +236,17 @@ export default function TeamsPage() {
       )
 
       // Remove saving indicator
-      setVolunteers(volunteers.map((v) => (v.id === volunteerId ? { ...v, isSaving: false } : v)))
+      setVolunteers((prevVolunteers) =>
+        prevVolunteers.map((v) => (v.id === volunteerId ? { ...v, isSaving: false } : v)),
+      )
     }
   }
 
   // Function to assign a color team
   const handleAssignColorTeam = async (volunteerId: string, colorTeam: string) => {
     // Mark this volunteer as saving
-    setVolunteers(
-      volunteers.map((volunteer) =>
+    setVolunteers((prevVolunteers) =>
+      prevVolunteers.map((volunteer) =>
         volunteer.id === volunteerId
           ? {
               ...volunteer,
@@ -288,8 +290,8 @@ export default function TeamsPage() {
       console.log("Color team assignment saved to Google Sheet successfully")
 
       // Update the volunteer state to remove saving indicator
-      setVolunteers(
-        volunteers.map((volunteer) =>
+      setVolunteers((prevVolunteers) =>
+        prevVolunteers.map((volunteer) =>
           volunteer.id === volunteerId
             ? {
                 ...volunteer,
@@ -310,8 +312,10 @@ export default function TeamsPage() {
       )
 
       // Update the volunteer state to remove saving indicator
-      setVolunteers(
-        volunteers.map((volunteer) => (volunteer.id === volunteerId ? { ...volunteer, isSaving: false } : volunteer)),
+      setVolunteers((prevVolunteers) =>
+        prevVolunteers.map((volunteer) =>
+          volunteer.id === volunteerId ? { ...volunteer, isSaving: false } : volunteer,
+        ),
       )
     }
   }
@@ -390,181 +394,179 @@ export default function TeamsPage() {
 
       <div className="flex justify-between items-center mb-6">
         <Tabs defaultValue="functional" onValueChange={(value) => setActiveTab(value as "functional" | "color")}>
-          <TabsList className="text-lg">
-            <TabsTrigger value="functional" className="text-lg px-6 py-3">
+          <TabsList>
+            <TabsTrigger value="functional">
               {language === "en" ? "Functional Teams" : "Équipes Fonctionnelles"}
             </TabsTrigger>
-            <TabsTrigger value="color" className="text-lg px-6 py-3">
-              {language === "en" ? "Color Teams" : "Équipes de Couleur"}
-            </TabsTrigger>
+            <TabsTrigger value="color">{language === "en" ? "Color Teams" : "Équipes de Couleur"}</TabsTrigger>
           </TabsList>
         </Tabs>
 
-        <Dialog open={editingTeams} onOpenChange={setEditingTeams}>
-          <DialogTrigger asChild>
-            <Button variant="outline" size="sm">
-              <Edit className="h-4 w-4 mr-2" />
-              {language === "en" ? "Edit Teams" : "Modifier les équipes"}
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle className="text-xl">
-                {activeTab === "functional"
-                  ? language === "en"
-                    ? "Edit Functional Teams"
-                    : "Modifier les équipes fonctionnelles"
-                  : language === "en"
-                    ? "Edit Color Teams"
-                    : "Modifier les équipes de couleur"}
-              </DialogTitle>
-            </DialogHeader>
+        <Button variant="outline" size="sm" onClick={() => setEditingTeams(true)}>
+          <Edit className="h-4 w-4 mr-2" />
+          {language === "en" ? "Edit Teams" : "Modifier les équipes"}
+        </Button>
+      </div>
 
-            {activeTab === "functional" ? (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  {functionalTeams.map((team, index) => (
-                    <div key={index} className="flex items-center justify-between">
-                      <span>{team}</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setFunctionalTeams(functionalTeams.filter((_, i) => i !== index))
-                        }}
-                      >
-                        {language === "en" ? "Remove" : "Supprimer"}
-                      </Button>
+      {/* Edit Teams Dialog */}
+      <Dialog open={editingTeams} onOpenChange={setEditingTeams}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="text-xl">
+              {activeTab === "functional"
+                ? language === "en"
+                  ? "Edit Functional Teams"
+                  : "Modifier les équipes fonctionnelles"
+                : language === "en"
+                  ? "Edit Color Teams"
+                  : "Modifier les équipes de couleur"}
+            </DialogTitle>
+          </DialogHeader>
+
+          {activeTab === "functional" ? (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                {functionalTeams.map((team, index) => (
+                  <div key={index} className="flex items-center justify-between">
+                    <span>{team}</span>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setFunctionalTeams(functionalTeams.filter((_, i) => i !== index))
+                      }}
+                    >
+                      {language === "en" ? "Remove" : "Supprimer"}
+                    </Button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex gap-2">
+                <Input
+                  placeholder={language === "en" ? "New team name" : "Nom de la nouvelle équipe"}
+                  value={newTeamName}
+                  onChange={(e) => setNewTeamName(e.target.value)}
+                />
+                <Button onClick={addFunctionalTeam}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  {language === "en" ? "Add" : "Ajouter"}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                {colorTeamsList.map((team, index) => (
+                  <div key={index} className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-4 h-4 rounded-full ${team.color}`}></div>
+                      <span>{team.name[language]}</span>
                     </div>
-                  ))}
-                </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setColorTeamsList(colorTeamsList.filter((_, i) => i !== index))
+                      }}
+                    >
+                      {language === "en" ? "Remove" : "Supprimer"}
+                    </Button>
+                  </div>
+                ))}
+              </div>
 
+              <div className="space-y-2">
                 <div className="flex gap-2">
                   <Input
-                    placeholder={language === "en" ? "New team name" : "Nom de la nouvelle équipe"}
-                    value={newTeamName}
-                    onChange={(e) => setNewTeamName(e.target.value)}
-                  />
-                  <Button onClick={addFunctionalTeam}>
-                    <Plus className="h-4 w-4 mr-2" />
-                    {language === "en" ? "Add" : "Ajouter"}
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  {colorTeamsList.map((team, index) => (
-                    <div key={index} className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-4 h-4 rounded-full ${team.color}`}></div>
-                        <span>{team.name[language]}</span>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          setColorTeamsList(colorTeamsList.filter((_, i) => i !== index))
-                        }}
-                      >
-                        {language === "en" ? "Remove" : "Supprimer"}
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <Input
-                      placeholder={language === "en" ? "Team ID (e.g. pink)" : "ID d'équipe (ex. rose)"}
-                      value={newColorTeam.id}
-                      onChange={(e) =>
-                        setNewColorTeam({ ...newColorTeam, id: e.target.value.toLowerCase().replace(/\s+/g, "-") })
-                      }
-                    />
-                    <Select
-                      value={newColorTeam.color}
-                      onValueChange={(value) => setNewColorTeam({ ...newColorTeam, color: value })}
-                    >
-                      <SelectTrigger className="w-24">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="bg-red-500">
-                          <div className="flex items-center gap-2">
-                            <div className="w-4 h-4 rounded-full bg-red-500"></div>
-                            <span>Red</span>
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="bg-blue-500">
-                          <div className="flex items-center gap-2">
-                            <div className="w-4 h-4 rounded-full bg-blue-500"></div>
-                            <span>Blue</span>
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="bg-green-500">
-                          <div className="flex items-center gap-2">
-                            <div className="w-4 h-4 rounded-full bg-green-500"></div>
-                            <span>Green</span>
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="bg-yellow-500">
-                          <div className="flex items-center gap-2">
-                            <div className="w-4 h-4 rounded-full bg-yellow-500"></div>
-                            <span>Yellow</span>
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="bg-purple-500">
-                          <div className="flex items-center gap-2">
-                            <div className="w-4 h-4 rounded-full bg-purple-500"></div>
-                            <span>Purple</span>
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="bg-pink-500">
-                          <div className="flex items-center gap-2">
-                            <div className="w-4 h-4 rounded-full bg-pink-500"></div>
-                            <span>Pink</span>
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="bg-orange-500">
-                          <div className="flex items-center gap-2">
-                            <div className="w-4 h-4 rounded-full bg-orange-500"></div>
-                            <span>Orange</span>
-                          </div>
-                        </SelectItem>
-                        <SelectItem value="bg-gray-500">
-                          <div className="flex items-center gap-2">
-                            <div className="w-4 h-4 rounded-full bg-gray-500"></div>
-                            <span>Gray</span>
-                          </div>
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Input
-                    placeholder={language === "en" ? "English name" : "Nom en anglais"}
-                    value={newColorTeam.name.en}
+                    placeholder={language === "en" ? "Team ID (e.g. pink)" : "ID d'équipe (ex. rose)"}
+                    value={newColorTeam.id}
                     onChange={(e) =>
-                      setNewColorTeam({ ...newColorTeam, name: { ...newColorTeam.name, en: e.target.value } })
+                      setNewColorTeam({ ...newColorTeam, id: e.target.value.toLowerCase().replace(/\s+/g, "-") })
                     }
                   />
-                  <Input
-                    placeholder={language === "en" ? "French name" : "Nom en français"}
-                    value={newColorTeam.name.fr}
-                    onChange={(e) =>
-                      setNewColorTeam({ ...newColorTeam, name: { ...newColorTeam.name, fr: e.target.value } })
-                    }
-                  />
-                  <Button onClick={addColorTeam} className="w-full">
-                    <Plus className="h-4 w-4 mr-2" />
-                    {language === "en" ? "Add Color Team" : "Ajouter une équipe de couleur"}
-                  </Button>
+                  <Select
+                    value={newColorTeam.color}
+                    onValueChange={(value) => setNewColorTeam({ ...newColorTeam, color: value })}
+                  >
+                    <SelectTrigger className="w-24">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bg-red-500">
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full bg-red-500"></div>
+                          <span>Red</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="bg-blue-500">
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full bg-blue-500"></div>
+                          <span>Blue</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="bg-green-500">
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full bg-green-500"></div>
+                          <span>Green</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="bg-yellow-500">
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full bg-yellow-500"></div>
+                          <span>Yellow</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="bg-purple-500">
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full bg-purple-500"></div>
+                          <span>Purple</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="bg-pink-500">
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full bg-pink-500"></div>
+                          <span>Pink</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="bg-orange-500">
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full bg-orange-500"></div>
+                          <span>Orange</span>
+                        </div>
+                      </SelectItem>
+                      <SelectItem value="bg-gray-500">
+                        <div className="flex items-center gap-2">
+                          <div className="w-4 h-4 rounded-full bg-gray-500"></div>
+                          <span>Gray</span>
+                        </div>
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
+                <Input
+                  placeholder={language === "en" ? "English name" : "Nom en anglais"}
+                  value={newColorTeam.name.en}
+                  onChange={(e) =>
+                    setNewColorTeam({ ...newColorTeam, name: { ...newColorTeam.name, en: e.target.value } })
+                  }
+                />
+                <Input
+                  placeholder={language === "en" ? "French name" : "Nom en français"}
+                  value={newColorTeam.name.fr}
+                  onChange={(e) =>
+                    setNewColorTeam({ ...newColorTeam, name: { ...newColorTeam.name, fr: e.target.value } })
+                  }
+                />
+                <Button onClick={addColorTeam} className="w-full">
+                  <Plus className="h-4 w-4 mr-2" />
+                  {language === "en" ? "Add Color Team" : "Ajouter une équipe de couleur"}
+                </Button>
               </div>
-            )}
-          </DialogContent>
-        </Dialog>
-      </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       <TabsContent value="functional" className="mt-6">
         <div className="grid grid-cols-1 gap-8">
@@ -628,38 +630,16 @@ export default function TeamsPage() {
                   {getUnassignedVolunteers().map((volunteer) => (
                     <div key={volunteer.id} className="flex items-center justify-between p-2 border rounded-md">
                       <span className="truncate">{volunteer.name}</span>
-                      <Dialog>
-                        <DialogTrigger asChild>
-                          <Button variant="outline" size="sm">
-                            {language === "en" ? "Assign" : "Assigner"}
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>
-                              {language === "en" ? "Assign Teams to " : "Assigner des équipes à "} {volunteer.name}
-                            </DialogTitle>
-                          </DialogHeader>
-                          <div className="space-y-4 mt-4">
-                            {functionalTeams.map((team) => (
-                              <div key={team} className="flex items-center space-x-2">
-                                <Checkbox
-                                  id={`team-${volunteer.id}-${team}`}
-                                  checked={volunteer.roles.includes(team)}
-                                  onCheckedChange={() => toggleRole(volunteer.id, team)}
-                                  disabled={volunteer.isSaving}
-                                />
-                                <label
-                                  htmlFor={`team-${volunteer.id}-${team}`}
-                                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                                >
-                                  {team}
-                                </label>
-                              </div>
-                            ))}
-                          </div>
-                        </DialogContent>
-                      </Dialog>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedVolunteer(volunteer.id)
+                          setEditingRoles(true)
+                        }}
+                      >
+                        {language === "en" ? "Assign" : "Assigner"}
+                      </Button>
                     </div>
                   ))}
                 </div>
