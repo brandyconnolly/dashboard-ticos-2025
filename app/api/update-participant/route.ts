@@ -129,14 +129,15 @@ export async function POST(request: Request) {
       values: [[participant.checkedIn ? "TRUE" : "FALSE"]],
     })
 
-    // Update roles
+    // Update roles - make sure we're properly handling the case where roles are removed
+    const rolesValue = participant.roles.length > 0 ? participant.roles.join(",") : ""
     dataUpdates.push({
       range: `${firstSheetName}!${columnToLetter(rolesColumnIndex + 1)}${rowIndex + 1}`,
-      values: [[participant.roles.join(",")]],
+      values: [[rolesValue]],
     })
 
-    // Add a console log to help with debugging
-    console.log(`Updating participant ${participant.id} roles to: ${participant.roles.join(",")}`)
+    // Add more detailed console logs to help with debugging
+    console.log(`Updating participant ${participant.id} (${participant.name}) roles to: ${rolesValue || "NONE"}`)
 
     // Update color team
     dataUpdates.push({
