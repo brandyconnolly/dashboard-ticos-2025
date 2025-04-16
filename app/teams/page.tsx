@@ -7,7 +7,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Plus, Edit, AlertTriangle } from "lucide-react"
+import { Plus, Edit, AlertTriangle, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { parseParticipants, parseFamilies } from "@/lib/fetch-data"
 import type { Participant } from "@/lib/types"
@@ -22,6 +22,7 @@ interface Volunteer {
   preferences: string[]
   assigned: string
   colorTeam?: string
+  isSaving?: boolean
 }
 
 export default function TeamsPage() {
@@ -92,11 +93,21 @@ export default function TeamsPage() {
             if (participant.roles.includes("worship-team")) preferences.push("Worship Team")
             if (participant.customRole) preferences.push(participant.customRole)
 
+            // Determine assigned team based on roles
+            let assigned = "unassigned"
+            if (participant.roles.includes("setup-crew")) assigned = "Setup Crew"
+            else if (participant.roles.includes("cleanup-crew")) assigned = "Cleanup Crew"
+            else if (participant.roles.includes("food-crew")) assigned = "Food Committee"
+            else if (participant.roles.includes("transportation")) assigned = "Transportation Team"
+            else if (participant.roles.includes("activities-coordinator")) assigned = "Activities Team"
+            else if (participant.roles.includes("prayer-team")) assigned = "Prayer Team"
+            else if (participant.roles.includes("worship-team")) assigned = "Worship Team"
+
             return {
               id: participant.id,
               name: participant.name,
               preferences: preferences,
-              assigned: preferences.length > 0 ? preferences[0] : "unassigned", // Default to first preference if any
+              assigned: assigned,
               colorTeam: participant.colorTeam,
             }
           })
@@ -114,108 +125,189 @@ export default function TeamsPage() {
     fetchData()
   }, [])
 
-  // Update the handleAssignTeam function to save changes to localStorage
-  const handleAssignTeam = (volunteerId: string, team: string) => {
+  // Update the handleAssignTeam function to save changes to both localStorage and Google Sheets
+  const handleAssignTeam = async (volunteerId: string, team: string) => {
+    // Mark this volunteer as saving
     setVolunteers(
-      volunteers.map((volunteer) => (volunteer.id === volunteerId ? { ...volunteer, assigned: team } : volunteer)),
+      volunteers.map((volunteer) =>
+        volunteer.id === volunteerId ? { ...volunteer, assigned: team, isSaving: true } : volunteer,
+      ),
     )
 
-    // Update the participant's roles in localStorage
-    const storedParticipants = getParticipantsFromStorage()
-    if (storedParticipants) {
-      const updatedParticipants = storedParticipants.map((participant) => {
-        if (participant.id === volunteerId) {
-          // Update the participant's roles based on the team assignment
-          let updatedRoles = [...participant.roles]
+    try {
+      // Get the participant from localStorage
+      const storedParticipants = getParticipantsFromStorage()
+      if (!storedParticipants) return
 
-          // Remove any existing team roles
-          updatedRoles = updatedRoles.filter(
-            (role) =>
-              ![
-                "setup-crew",
-                "cleanup-crew",
-                "food-crew",
-                "transportation",
-                "activities-coordinator",
-                "prayer-team",
-                "worship-team",
-              ].includes(role),
-          )
+      const participant = storedParticipants.find((p) => p.id === volunteerId)
+      if (!participant) return
 
-          // Add the new team role if it's not "unassigned"
-          if (team !== "unassigned") {
-            // Map the team name to a role
-            let roleToAdd: string | null = null
-            switch (team) {
-              case "Setup Crew":
-                roleToAdd = "setup-crew"
-                break
-              case "Cleanup Crew":
-                roleToAdd = "cleanup-crew"
-                break
-              case "Food Committee":
-                roleToAdd = "food-crew"
-                break
-              case "Transportation Team":
-                roleToAdd = "transportation"
-                break
-              case "Activities Team":
-                roleToAdd = "activities-coordinator"
-                break
-              case "Prayer Team":
-                roleToAdd = "prayer-team"
-                break
-              case "Worship Team":
-                roleToAdd = "worship-team"
-                break
-            }
+      // Update the participant's roles based on the team assignment
+      let updatedRoles = [...participant.roles]
 
-            if (roleToAdd) {
-              updatedRoles.push(roleToAdd as any)
-            }
-          }
+      // Remove any existing team roles
+      updatedRoles = updatedRoles.filter(
+        (role) =>
+          ![
+            "setup-crew",
+            "cleanup-crew",
+            "food-crew",
+            "transportation",
+            "activities-coordinator",
+            "prayer-team",
+            "worship-team",
+          ].includes(role),
+      )
 
-          return {
-            ...participant,
-            roles: updatedRoles,
-          }
+      // Add the new team role if it's not "unassigned"
+      if (team !== "unassigned") {
+        // Map the team name to a role
+        let roleToAdd: string | null = null
+        switch (team) {
+          case "Setup Crew":
+            roleToAdd = "setup-crew"
+            break
+          case "Cleanup Crew":
+            roleToAdd = "cleanup-crew"
+            break
+          case "Food Committee":
+            roleToAdd = "food-crew"
+            break
+          case "Transportation Team":
+            roleToAdd = "transportation"
+            break
+          case "Activities Team":
+            roleToAdd = "activities-coordinator"
+            break
+          case "Prayer Team":
+            roleToAdd = "prayer-team"
+            break
+          case "Worship Team":
+            roleToAdd = "worship-team"
+            break
         }
-        return participant
+
+        if (roleToAdd) {
+          updatedRoles.push(roleToAdd as any)
+        }
+      }
+
+      const updatedParticipant = {
+        ...participant,
+        roles: updatedRoles,
+      }
+
+      // Update localStorage
+      const updatedParticipants = storedParticipants.map((p) => (p.id === volunteerId ? updatedParticipant : p))
+      saveParticipantsToStorage(updatedParticipants)
+
+      // Update Google Sheet via API
+      const response = await fetch("/api/update-participant", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updatedParticipant),
       })
 
-      // Save the updated participants to localStorage
-      saveParticipantsToStorage(updatedParticipants)
+      if (!response.ok) {
+        throw new Error("Failed to update participant in Google Sheet")
+      }
+
+      console.log("Team assignment saved to Google Sheet successfully")
+
+      // Update the volunteer state to remove saving indicator
+      setVolunteers(
+        volunteers.map((volunteer) =>
+          volunteer.id === volunteerId ? { ...volunteer, assigned: team, isSaving: false } : volunteer,
+        ),
+      )
+    } catch (error) {
+      console.error("Error saving team assignment:", error)
+
+      // Update the volunteer state to remove saving indicator but keep the new assignment
+      setVolunteers(
+        volunteers.map((volunteer) =>
+          volunteer.id === volunteerId ? { ...volunteer, assigned: team, isSaving: false } : volunteer,
+        ),
+      )
     }
   }
 
-  // Update the handleAssignColorTeam function to save changes to localStorage
-  const handleAssignColorTeam = (volunteerId: string, colorTeam: string) => {
+  // Update the handleAssignColorTeam function to save changes to both localStorage and Google Sheets
+  const handleAssignColorTeam = async (volunteerId: string, colorTeam: string) => {
+    // Mark this volunteer as saving
     setVolunteers(
       volunteers.map((volunteer) =>
         volunteer.id === volunteerId
           ? {
               ...volunteer,
               colorTeam: colorTeam === "none" ? undefined : colorTeam,
+              isSaving: true,
             }
           : volunteer,
       ),
     )
 
-    // Update the participant's colorTeam in localStorage
-    const storedParticipants = getParticipantsFromStorage()
-    if (storedParticipants) {
-      const updatedParticipants = storedParticipants.map((participant) => {
-        if (participant.id === volunteerId) {
-          return {
-            ...participant,
-            colorTeam: colorTeam === "none" ? undefined : colorTeam,
-          }
-        }
-        return participant
+    try {
+      // Get the participant from localStorage
+      const storedParticipants = getParticipantsFromStorage()
+      if (!storedParticipants) return
+
+      const participant = storedParticipants.find((p) => p.id === volunteerId)
+      if (!participant) return
+
+      const updatedParticipant = {
+        ...participant,
+        colorTeam: colorTeam === "none" ? undefined : colorTeam,
+      }
+
+      // Update localStorage
+      const updatedParticipants = storedParticipants.map((p) => (p.id === volunteerId ? updatedParticipant : p))
+      saveParticipantsToStorage(updatedParticipants)
+
+      // Update Google Sheet via API
+      const response = await fetch("/api/update-participant", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updatedParticipant),
       })
 
-      // Save the updated participants to localStorage
-      saveParticipantsToStorage(updatedParticipants)
+      if (!response.ok) {
+        throw new Error("Failed to update participant in Google Sheet")
+      }
+
+      console.log("Color team assignment saved to Google Sheet successfully")
+
+      // Update the volunteer state to remove saving indicator
+      setVolunteers(
+        volunteers.map((volunteer) =>
+          volunteer.id === volunteerId
+            ? {
+                ...volunteer,
+                colorTeam: colorTeam === "none" ? undefined : colorTeam,
+                isSaving: false,
+              }
+            : volunteer,
+        ),
+      )
+    } catch (error) {
+      console.error("Error saving color team assignment:", error)
+
+      // Update the volunteer state to remove saving indicator but keep the new assignment
+      setVolunteers(
+        volunteers.map((volunteer) =>
+          volunteer.id === volunteerId
+            ? {
+                ...volunteer,
+                colorTeam: colorTeam === "none" ? undefined : colorTeam,
+                isSaving: false,
+              }
+            : volunteer,
+        ),
+      )
     }
   }
 
@@ -503,9 +595,19 @@ export default function TeamsPage() {
                       <Select
                         value={volunteer.assigned}
                         onValueChange={(value) => handleAssignTeam(volunteer.id, value)}
+                        disabled={volunteer.isSaving}
                       >
                         <SelectTrigger className="w-full text-lg">
-                          <SelectValue placeholder={language === "en" ? "Select a team" : "Sélectionner une équipe"} />
+                          <SelectValue placeholder={language === "en" ? "Select a team" : "Sélectionner une équipe"}>
+                            {volunteer.isSaving ? (
+                              <div className="flex items-center">
+                                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                {volunteer.assigned}
+                              </div>
+                            ) : (
+                              volunteer.assigned
+                            )}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="unassigned">
@@ -579,11 +681,19 @@ export default function TeamsPage() {
                         <Select
                           value={volunteer.colorTeam || "none"}
                           onValueChange={(value) => handleAssignColorTeam(volunteer.id, value)}
+                          disabled={volunteer.isSaving}
                         >
                           <SelectTrigger className="w-full text-lg">
-                            <SelectValue
-                              placeholder={language === "en" ? "Select a team" : "Sélectionner une équipe"}
-                            />
+                            <SelectValue placeholder={language === "en" ? "Select a team" : "Sélectionner une équipe"}>
+                              {volunteer.isSaving ? (
+                                <div className="flex items-center">
+                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                  {volunteer.colorTeam || "none"}
+                                </div>
+                              ) : (
+                                <></>
+                              )}
+                            </SelectValue>
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="none">
