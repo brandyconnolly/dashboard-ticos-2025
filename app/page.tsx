@@ -161,8 +161,10 @@ export default function ParticipantsPage() {
   }
 
   // Handle participant update
-  // Update the handleParticipantUpdate function to save changes to localStorage
+  // Update the handleParticipantUpdate function to be async and return a promise
+  // Find the handleParticipantUpdate function and replace it with this
   const handleParticipantUpdate = async (updatedParticipant: Participant) => {
+    // Update local state
     setParticipants((prevParticipants) => {
       const newParticipants = prevParticipants.map((p) => (p.id === updatedParticipant.id ? updatedParticipant : p))
 
@@ -187,11 +189,13 @@ export default function ParticipantsPage() {
       if (!response.ok) {
         const errorData = await response.json()
         console.error("Error updating participant in Google Sheet:", errorData)
+        throw new Error("Failed to update participant in Google Sheet")
       } else {
         console.log("Participant updated successfully in Google Sheet")
       }
     } catch (error) {
       console.error("Error calling update-participant API:", error)
+      throw error
     }
   }
 

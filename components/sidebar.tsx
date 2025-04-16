@@ -116,7 +116,7 @@ export default function Sidebar() {
             <Button
               size="sm"
               onClick={toggleLanguage}
-              className="px-2 py-1 h-8 bg-white text-blue-600 hover:bg-gray-100 hover:text-blue-600 flex items-center"
+              className="px-2 py-1 h-8 bg-white text-blue-600 hover:bg-gray-100 flex items-center"
             >
               <Globe className="h-3 w-3 mr-1" />
               <span>{language === "en" ? "EN" : "FR"}</span>
@@ -124,7 +124,7 @@ export default function Sidebar() {
             <Button
               size="sm"
               onClick={toggleViewMode}
-              className="px-2 py-1 h-8 bg-white text-blue-600 hover:bg-gray-100 hover:text-blue-600 flex items-center"
+              className="px-2 py-1 h-8 bg-white text-blue-600 hover:bg-gray-100 flex items-center"
             >
               {viewMode === "desktop" ? <Monitor className="h-3 w-3" /> : <Smartphone className="h-3 w-3" />}
             </Button>
@@ -174,7 +174,7 @@ export default function Sidebar() {
           <Button
             size="sm"
             onClick={toggleLanguage}
-            className="flex-1 bg-white text-blue-600 hover:bg-gray-100 hover:text-blue-600 flex items-center justify-center"
+            className="flex-1 bg-white text-blue-600 hover:bg-gray-100 flex items-center justify-center"
           >
             <Globe className="mr-2 h-4 w-4" />
             {language === "en" ? "English" : "Français"}
@@ -182,7 +182,7 @@ export default function Sidebar() {
           <Button
             size="sm"
             onClick={toggleViewMode}
-            className="flex-1 bg-white text-blue-600 hover:bg-gray-100 hover:text-blue-600 flex items-center justify-center"
+            className="flex-1 bg-white text-blue-600 hover:bg-gray-100 flex items-center justify-center"
           >
             {viewMode === "desktop" ? (
               <>

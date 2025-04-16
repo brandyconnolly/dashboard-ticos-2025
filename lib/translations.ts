@@ -12,6 +12,7 @@ const translations = {
   loading_data: { en: "Loading data...", fr: "Chargement des données..." },
   error_loading_data: { en: "Error loading data", fr: "Erreur lors du chargement des données" },
   go_to_settings: { en: "Go to Settings", fr: "Aller aux Paramètres" },
+  saving: { en: "Saving...", fr: "Enregistrement..." },
 
   // Age groups
   all: { en: "All", fr: "Tous" },

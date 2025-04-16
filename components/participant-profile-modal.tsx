@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Calendar, Mail, Phone, User, Users } from "lucide-react"
+import { Calendar, Mail, Phone, User, Users, Loader2 } from "lucide-react"
 import RoleEditor from "@/components/role-editor"
 import ColorTeamEditor from "@/components/color-team-editor"
 import type { Participant, Family } from "@/lib/types"
@@ -51,6 +51,8 @@ export default function ParticipantProfileModal({
       days: { friday: true, saturday: true, sunday: true },
     },
   )
+  // Add loading state
+  const [isSaving, setIsSaving] = useState(false)
 
   // Update the useEffect to initialize the state when the participant changes
   useEffect(() => {
@@ -140,17 +142,31 @@ export default function ParticipantProfileModal({
   }
 
   // Add a new function to save all changes
-  const saveAllChanges = () => {
-    // Create the final updated participant with all changes
-    const updatedParticipant = {
-      ...participantState,
-      comments,
-      attendance,
-    }
+  const saveAllChanges = async () => {
+    if (isSaving) return
 
-    // Call the parent component's onUpdate function
-    onUpdate(updatedParticipant)
-    setHasUnsavedChanges(false)
+    setIsSaving(true)
+
+    try {
+      // Create the final updated participant with all changes
+      const updatedParticipant = {
+        ...participantState,
+        comments,
+        attendance,
+      }
+
+      // Call the parent component's onUpdate function
+      await onUpdate(updatedParticipant)
+      setHasUnsavedChanges(false)
+
+      // Close the modal after successful save
+      onClose()
+    } catch (error) {
+      console.error("Error saving changes:", error)
+      // You could add error handling UI here if needed
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   const getAgeGroupLabel = (ageGroup: string) => {
@@ -299,10 +315,17 @@ export default function ParticipantProfileModal({
           <Button
             onClick={saveAllChanges}
             className="w-full md:w-auto"
-            disabled={!hasUnsavedChanges}
+            disabled={!hasUnsavedChanges || isSaving}
             variant={hasUnsavedChanges ? "default" : "outline"}
           >
-            {getTranslation("save_changes", language)}
+            {isSaving ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {getTranslation("saving", language) || "Saving..."}
+              </>
+            ) : (
+              getTranslation("save_changes", language)
+            )}
           </Button>
         </div>
       </DialogContent>
