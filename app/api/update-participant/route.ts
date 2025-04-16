@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import type { Participant } from "@/lib/types"
+import { google } from "googleapis"
 
 export async function POST(request: Request) {
   try {
@@ -23,92 +24,137 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Spreadsheet ID not configured" }, { status: 500 })
     }
 
-    // In a real implementation, you would:
-    // 1. Parse your service account credentials
-    // 2. Create a Google Sheets client
-    // 3. Find the row for this participant
-    // 4. Update the relevant cells
-
-    // This is a placeholder for the actual implementation
-    // For now, we'll just return success
-    return NextResponse.json({
-      success: true,
-      message: "Participant updated successfully",
-      participant,
-    })
-
-    /* 
-    // Example implementation (commented out for now)
-    
     // Parse your service account credentials
     const keys = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON)
-    
+
     // Create a new client
     const client = new google.auth.JWT(keys.client_email, null, keys.private_key, [
       "https://www.googleapis.com/auth/spreadsheets",
     ])
-    
+
     // Authorize the client
     await client.authorize()
-    
+
     // Create a Sheets API client
     const sheets = google.sheets({ version: "v4", auth: client })
     const spreadsheetId = process.env.SPREADSHEET_ID
-    
+
     // Get the sheet data to find the participant's row
     const sheetsResponse = await sheets.spreadsheets.get({
       spreadsheetId,
     })
-    
+
     const firstSheetName = sheetsResponse.data.sheets?.[0].properties?.title
-    
+
     if (!firstSheetName) {
       return NextResponse.json({ error: "No sheets found in the spreadsheet" }, { status: 404 })
     }
-    
+
     // Get all data to find the participant
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId,
       range: `${firstSheetName}!A1:CZ1000`,
     })
-    
+
     if (!response.data.values || response.data.values.length === 0) {
       return NextResponse.json({ error: "No data found in the spreadsheet" }, { status: 404 })
     }
-    
-    // Find the participant's row
-    // This would depend on how your spreadsheet is structured
-    // For example, if participant ID is in column A:
-    let rowIndex = -1
-    for (let i = 1; i < response.data.values.length; i++) {
-      if (response.data.values[i][0] === participant.id) {
-        rowIndex = i + 1 // +1 because sheets are 1-indexed
-        break
-      }
+
+    // Extract the participant ID from the format "p{rowIndex}_{personNum}"
+    const idParts = participant.id.match(/p(\d+)_(\d+)/)
+    if (!idParts) {
+      return NextResponse.json({ error: "Invalid participant ID format" }, { status: 400 })
     }
-    
-    if (rowIndex === -1) {
-      return NextResponse.json({ error: "Participant not found in spreadsheet" }, { status: 404 })
+
+    const rowIndex = Number.parseInt(idParts[1])
+    const personNum = Number.parseInt(idParts[2])
+
+    if (isNaN(rowIndex) || isNaN(personNum) || rowIndex < 1) {
+      return NextResponse.json({ error: "Invalid participant ID values" }, { status: 400 })
     }
-    
-    // Update the relevant cells
-    // This would depend on your spreadsheet structure
-    // For example, if roles are in column C:
-    await sheets.spreadsheets.values.update({
+
+    // Add a new column for tracking check-in status if it doesn't exist
+    const headers = response.data.values[0]
+    let checkedInColumnIndex = headers.findIndex((h) => h === "CheckedIn")
+    let rolesColumnIndex = headers.findIndex((h) => h === "Roles")
+    let colorTeamColumnIndex = headers.findIndex((h) => h === "ColorTeam")
+
+    // If columns don't exist, create them
+    const updates = []
+
+    if (checkedInColumnIndex === -1) {
+      checkedInColumnIndex = headers.length
+      updates.push({
+        range: `${firstSheetName}!${columnToLetter(checkedInColumnIndex + 1)}1`,
+        values: [["CheckedIn"]],
+      })
+      headers.push("CheckedIn")
+    }
+
+    if (rolesColumnIndex === -1) {
+      rolesColumnIndex = headers.length
+      updates.push({
+        range: `${firstSheetName}!${columnToLetter(rolesColumnIndex + 1)}1`,
+        values: [["Roles"]],
+      })
+      headers.push("Roles")
+    }
+
+    if (colorTeamColumnIndex === -1) {
+      colorTeamColumnIndex = headers.length
+      updates.push({
+        range: `${firstSheetName}!${columnToLetter(colorTeamColumnIndex + 1)}1`,
+        values: [["ColorTeam"]],
+      })
+      headers.push("ColorTeam")
+    }
+
+    // If we added new columns, update the headers
+    if (updates.length > 0) {
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          valueInputOption: "RAW",
+          data: updates,
+        },
+      })
+    }
+
+    // Now update the participant data
+    const dataUpdates = []
+
+    // Update checked-in status
+    dataUpdates.push({
+      range: `${firstSheetName}!${columnToLetter(checkedInColumnIndex + 1)}${rowIndex + 1}`,
+      values: [[participant.checkedIn ? "TRUE" : "FALSE"]],
+    })
+
+    // Update roles
+    dataUpdates.push({
+      range: `${firstSheetName}!${columnToLetter(rolesColumnIndex + 1)}${rowIndex + 1}`,
+      values: [[participant.roles.join(",")]],
+    })
+
+    // Update color team
+    dataUpdates.push({
+      range: `${firstSheetName}!${columnToLetter(colorTeamColumnIndex + 1)}${rowIndex + 1}`,
+      values: [[participant.colorTeam || ""]],
+    })
+
+    // Perform the updates
+    await sheets.spreadsheets.values.batchUpdate({
       spreadsheetId,
-      range: `${firstSheetName}!C${rowIndex}`,
-      valueInputOption: "RAW",
       requestBody: {
-        values: [[participant.roles.join(",")]],
+        valueInputOption: "RAW",
+        data: dataUpdates,
       },
     })
-    
+
     return NextResponse.json({
       success: true,
       message: "Participant updated successfully in spreadsheet",
       participant,
     })
-    */
   } catch (error: any) {
     console.error("Error updating participant:", error)
     return NextResponse.json(
@@ -118,4 +164,16 @@ export async function POST(request: Request) {
       { status: 500 },
     )
   }
+}
+
+// Helper function to convert column number to letter (e.g., 1 -> A, 27 -> AA)
+function columnToLetter(column: number): string {
+  let temp,
+    letter = ""
+  while (column > 0) {
+    temp = (column - 1) % 26
+    letter = String.fromCharCode(temp + 65) + letter
+    column = (column - temp - 1) / 26
+  }
+  return letter
 }

@@ -37,6 +37,10 @@ export default function DataStatus({ language: propLanguage, onDataUpdate }: Dat
   const [initialLoadComplete, setInitialLoadComplete] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
 
+  // Add a new state for auto-refresh
+  const [autoRefresh, setAutoRefresh] = useState(true)
+  const [refreshInterval, setRefreshInterval] = useState(60000) // 60 seconds by default
+
   useEffect(() => {
     setIsMounted(true)
     // Try to get the last updated time from localStorage
@@ -112,6 +116,22 @@ export default function DataStatus({ language: propLanguage, onDataUpdate }: Dat
     }
   }, [isMounted]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Add useEffect for auto-refresh
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | null = null
+
+    if (autoRefresh && !isUpdating) {
+      intervalId = setInterval(() => {
+        console.log("Auto-refreshing data...")
+        updateData()
+      }, refreshInterval)
+    }
+
+    return () => {
+      if (intervalId) clearInterval(intervalId)
+    }
+  }, [autoRefresh, refreshInterval, isUpdating])
+
   const formattedDate = lastUpdated.toLocaleDateString(language === "en" ? "en-US" : "fr-FR", {
     month: "long",
     day: "numeric",
@@ -166,6 +186,18 @@ export default function DataStatus({ language: propLanguage, onDataUpdate }: Dat
         <RefreshCw className={`mr-1 md:mr-2 h-4 w-4 md:h-5 md:w-5 ${isUpdating ? "animate-spin" : ""}`} />
         {language === "en" ? "Update Now" : "Mettre à jour"}
       </Button>
+      <div className="flex items-center mt-2 md:mt-0 md:ml-2">
+        <input
+          type="checkbox"
+          id="auto-refresh"
+          checked={autoRefresh}
+          onChange={(e) => setAutoRefresh(e.target.checked)}
+          className="mr-1"
+        />
+        <label htmlFor="auto-refresh" className="text-xs md:text-sm">
+          {language === "en" ? "Auto-refresh" : "Actualisation auto"}
+        </label>
+      </div>
     </div>
   )
 }

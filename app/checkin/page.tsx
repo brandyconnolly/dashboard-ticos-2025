@@ -104,15 +104,24 @@ export default function CheckinPage() {
     }
   }
 
-  // Update the handleCheckIn function to save changes to localStorage
-  const handleCheckIn = (familyId: number, memberId: string) => {
+  // Update the handleCheckIn function to save changes to localStorage and Google Sheets
+  const handleCheckIn = async (familyId: number, memberId: string) => {
+    // Find the participant to update
+    const family = attendees.find((f) => f.id === familyId)
+    const member = family?.members.find((m) => m.id === memberId)
+
+    if (!member) return
+
+    // Toggle the checked-in status
+    const newCheckedInStatus = !member.checkedIn
+
     setAttendees(
       attendees.map((family) =>
         family.id === familyId
           ? {
               ...family,
               members: family.members.map((member) =>
-                member.id === memberId ? { ...member, checkedIn: !member.checkedIn } : member,
+                member.id === memberId ? { ...member, checkedIn: newCheckedInStatus } : member,
               ),
             }
           : family,
@@ -125,7 +134,7 @@ export default function CheckinPage() {
         ? {
             ...family,
             members: family.members.map((member) =>
-              member.id === memberId ? { ...member, checkedIn: !member.checkedIn } : member,
+              member.id === memberId ? { ...member, checkedIn: newCheckedInStatus } : member,
             ),
           }
         : family,
@@ -143,13 +152,9 @@ export default function CheckinPage() {
     if (storedParticipants) {
       const updatedParticipants = storedParticipants.map((participant) => {
         if (participant.id === memberId) {
-          // Find the current check-in status from our attendees state
-          const family = updatedAttendees.find((f) => f.id === familyId)
-          const member = family?.members.find((m) => m.id === memberId)
-
           return {
             ...participant,
-            checkedIn: member?.checkedIn || false,
+            checkedIn: newCheckedInStatus,
           }
         }
         return participant
@@ -157,11 +162,34 @@ export default function CheckinPage() {
 
       // Save the updated participants to localStorage
       saveParticipantsToStorage(updatedParticipants)
+
+      // Update Google Sheet via API
+      try {
+        const participantToUpdate = updatedParticipants.find((p) => p.id === memberId)
+        if (participantToUpdate) {
+          const response = await fetch("/api/update-participant", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(participantToUpdate),
+          })
+
+          if (!response.ok) {
+            const errorData = await response.json()
+            console.error("Error updating participant in Google Sheet:", errorData)
+          } else {
+            console.log("Participant check-in status updated successfully in Google Sheet")
+          }
+        }
+      } catch (error) {
+        console.error("Error calling update-participant API:", error)
+      }
     }
   }
 
-  // Update the handleCheckInAll function to save changes to localStorage
-  const handleCheckInAll = (familyId: number, checkIn: boolean) => {
+  // Update the handleCheckInAll function to save changes to localStorage and Google Sheets
+  const handleCheckInAll = async (familyId: number, checkIn: boolean) => {
     setAttendees(
       attendees.map((family) =>
         family.id === familyId
@@ -193,12 +221,14 @@ export default function CheckinPage() {
     // Update the participants' checkedIn status in localStorage
     const storedParticipants = getParticipantsFromStorage()
     if (storedParticipants) {
+      const family = attendees.find((f) => f.id === familyId)
+      if (!family) return
+
+      const memberIds = family.members.map((m) => m.id)
+
       const updatedParticipants = storedParticipants.map((participant) => {
         // Check if this participant is in the family we're updating
-        const family = attendees.find((f) => f.id === familyId)
-        const isMemberOfFamily = family?.members.some((m) => m.id === participant.id)
-
-        if (isMemberOfFamily) {
+        if (memberIds.includes(participant.id)) {
           return {
             ...participant,
             checkedIn: checkIn,
@@ -209,6 +239,31 @@ export default function CheckinPage() {
 
       // Save the updated participants to localStorage
       saveParticipantsToStorage(updatedParticipants)
+
+      // Update Google Sheet via API for each family member
+      try {
+        const participantsToUpdate = updatedParticipants.filter((p) => memberIds.includes(p.id))
+
+        // Update each participant one by one
+        for (const participant of participantsToUpdate) {
+          const response = await fetch("/api/update-participant", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(participant),
+          })
+
+          if (!response.ok) {
+            const errorData = await response.json()
+            console.error("Error updating participant in Google Sheet:", errorData)
+          }
+        }
+
+        console.log(`${participantsToUpdate.length} participants' check-in status updated successfully in Google Sheet`)
+      } catch (error) {
+        console.error("Error calling update-participant API:", error)
+      }
     }
   }
 

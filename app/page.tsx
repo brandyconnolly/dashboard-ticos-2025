@@ -162,7 +162,7 @@ export default function ParticipantsPage() {
 
   // Handle participant update
   // Update the handleParticipantUpdate function to save changes to localStorage
-  const handleParticipantUpdate = (updatedParticipant: Participant) => {
+  const handleParticipantUpdate = async (updatedParticipant: Participant) => {
     setParticipants((prevParticipants) => {
       const newParticipants = prevParticipants.map((p) => (p.id === updatedParticipant.id ? updatedParticipant : p))
 
@@ -174,8 +174,25 @@ export default function ParticipantsPage() {
 
     setSelectedParticipant(updatedParticipant)
 
-    // TODO: Update Excel sheet via API
-    console.log("Updated participant:", updatedParticipant)
+    // Update Google Sheet via API
+    try {
+      const response = await fetch("/api/update-participant", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(updatedParticipant),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error("Error updating participant in Google Sheet:", errorData)
+      } else {
+        console.log("Participant updated successfully in Google Sheet")
+      }
+    } catch (error) {
+      console.error("Error calling update-participant API:", error)
+    }
   }
 
   // Open participant profile
