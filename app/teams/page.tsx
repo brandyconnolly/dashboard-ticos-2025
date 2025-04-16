@@ -339,6 +339,188 @@ export default function TeamsPage() {
             </TabsTrigger>
             <TabsTrigger value="color">{language === "en" ? "Color Teams" : "Équipes de Couleur"}</TabsTrigger>
           </TabsList>
+
+          {/* Move TabsContent inside the Tabs component */}
+          <TabsContent value="functional" className="mt-6">
+            <div className="grid grid-cols-1 gap-8">
+              {/* Functional Teams */}
+              {functionalTeams.map((team) => {
+                const teamVolunteers = getTeamVolunteers(team)
+                return (
+                  <div key={team} className="bg-white rounded-lg shadow-sm border overflow-hidden">
+                    <div className="bg-gray-50 px-6 py-4 border-b">
+                      <h3 className="font-medium text-lg flex items-center justify-between">
+                        <span>{team}</span>
+                        <Badge variant="outline" className="ml-2">
+                          {teamVolunteers.length} {language === "en" ? "members" : "membres"}
+                        </Badge>
+                      </h3>
+                    </div>
+                    <div className="p-4">
+                      {teamVolunteers.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                          {teamVolunteers.map((volunteer) => (
+                            <div key={volunteer.id} className="flex items-center justify-between p-2 border rounded-md">
+                              <span className="truncate">{volunteer.name}</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => toggleRole(volunteer.id, team)}
+                                disabled={volunteer.isSaving}
+                              >
+                                {volunteer.isSaving ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <X className="h-4 w-4 text-red-500" />
+                                )}
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-gray-500 text-center py-4">
+                          {language === "en" ? "No members assigned" : "Aucun membre assigné"}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+
+              {/* Unassigned Section */}
+              <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+                <div className="bg-gray-50 px-6 py-4 border-b">
+                  <h3 className="font-medium text-lg flex items-center justify-between">
+                    <span>{language === "en" ? "Unassigned" : "Non assignés"}</span>
+                    <Badge variant="outline" className="ml-2">
+                      {getUnassignedVolunteers().length} {language === "en" ? "members" : "membres"}
+                    </Badge>
+                  </h3>
+                </div>
+                <div className="p-4">
+                  {getUnassignedVolunteers().length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {getUnassignedVolunteers().map((volunteer) => (
+                        <div key={volunteer.id} className="flex items-center justify-between p-2 border rounded-md">
+                          <span className="truncate">{volunteer.name}</span>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setSelectedVolunteer(volunteer.id)
+                              setEditingRoles(true)
+                            }}
+                          >
+                            {language === "en" ? "Assign" : "Assigner"}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-center py-4">
+                      {language === "en" ? "No unassigned members" : "Aucun membre non assigné"}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="color" className="mt-6">
+            <div className="grid grid-cols-1 gap-8">
+              {/* Color Teams */}
+              {colorTeamsList.map((team) => {
+                const teamVolunteers = getColorTeamVolunteers(team.id)
+                return (
+                  <div key={team.id} className="bg-white rounded-lg shadow-sm border overflow-hidden">
+                    <div className={`px-6 py-4 border-b ${team.color} bg-opacity-20`}>
+                      <h3 className="font-medium text-lg flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-4 h-4 rounded-full ${team.color}`}></div>
+                          <span>{team.name[language]}</span>
+                        </div>
+                        <Badge variant="outline" className="ml-2">
+                          {teamVolunteers.length} {language === "en" ? "members" : "membres"}
+                        </Badge>
+                      </h3>
+                    </div>
+                    <div className="p-4">
+                      {teamVolunteers.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                          {teamVolunteers.map((volunteer) => (
+                            <div key={volunteer.id} className="flex items-center justify-between p-2 border rounded-md">
+                              <span className="truncate">{volunteer.name}</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleAssignColorTeam(volunteer.id, "none")}
+                                disabled={volunteer.isSaving}
+                              >
+                                {volunteer.isSaving ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <X className="h-4 w-4 text-red-500" />
+                                )}
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-gray-500 text-center py-4">
+                          {language === "en" ? "No members assigned" : "Aucun membre assigné"}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+
+              {/* Unassigned Color Team Section */}
+              <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+                <div className="bg-gray-50 px-6 py-4 border-b">
+                  <h3 className="font-medium text-lg flex items-center justify-between">
+                    <span>{language === "en" ? "Unassigned" : "Non assignés"}</span>
+                    <Badge variant="outline" className="ml-2">
+                      {getUnassignedColorTeamVolunteers().length} {language === "en" ? "members" : "membres"}
+                    </Badge>
+                  </h3>
+                </div>
+                <div className="p-4">
+                  {getUnassignedColorTeamVolunteers().length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
+                      {getUnassignedColorTeamVolunteers().map((volunteer) => (
+                        <div key={volunteer.id} className="flex items-center justify-between p-2 border rounded-md">
+                          <span className="truncate">{volunteer.name}</span>
+                          <Select
+                            onValueChange={(value) => handleAssignColorTeam(volunteer.id, value)}
+                            disabled={volunteer.isSaving}
+                          >
+                            <SelectTrigger className="w-32">
+                              <SelectValue placeholder={language === "en" ? "Assign" : "Assigner"} />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {colorTeamsList.map((team) => (
+                                <SelectItem key={team.id} value={team.id}>
+                                  <div className="flex items-center gap-2">
+                                    <div className={`w-3 h-3 rounded-full ${team.color}`}></div>
+                                    <span>{team.name[language]}</span>
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 text-center py-4">
+                      {language === "en" ? "No unassigned members" : "Aucun membre non assigné"}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </TabsContent>
         </Tabs>
 
         <Button variant="outline" size="sm" onClick={() => setEditingTeams(true)}>
@@ -494,187 +676,6 @@ export default function TeamsPage() {
           )}
         </DialogContent>
       </Dialog>
-
-      <TabsContent value="functional" className="mt-6">
-        <div className="grid grid-cols-1 gap-8">
-          {/* Functional Teams */}
-          {functionalTeams.map((team) => {
-            const teamVolunteers = getTeamVolunteers(team)
-            return (
-              <div key={team} className="bg-white rounded-lg shadow-sm border overflow-hidden">
-                <div className="bg-gray-50 px-6 py-4 border-b">
-                  <h3 className="font-medium text-lg flex items-center justify-between">
-                    <span>{team}</span>
-                    <Badge variant="outline" className="ml-2">
-                      {teamVolunteers.length} {language === "en" ? "members" : "membres"}
-                    </Badge>
-                  </h3>
-                </div>
-                <div className="p-4">
-                  {teamVolunteers.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                      {teamVolunteers.map((volunteer) => (
-                        <div key={volunteer.id} className="flex items-center justify-between p-2 border rounded-md">
-                          <span className="truncate">{volunteer.name}</span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => toggleRole(volunteer.id, team)}
-                            disabled={volunteer.isSaving}
-                          >
-                            {volunteer.isSaving ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <X className="h-4 w-4 text-red-500" />
-                            )}
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-gray-500 text-center py-4">
-                      {language === "en" ? "No members assigned" : "Aucun membre assigné"}
-                    </p>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-
-          {/* Unassigned Section */}
-          <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-            <div className="bg-gray-50 px-6 py-4 border-b">
-              <h3 className="font-medium text-lg flex items-center justify-between">
-                <span>{language === "en" ? "Unassigned" : "Non assignés"}</span>
-                <Badge variant="outline" className="ml-2">
-                  {getUnassignedVolunteers().length} {language === "en" ? "members" : "membres"}
-                </Badge>
-              </h3>
-            </div>
-            <div className="p-4">
-              {getUnassignedVolunteers().length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {getUnassignedVolunteers().map((volunteer) => (
-                    <div key={volunteer.id} className="flex items-center justify-between p-2 border rounded-md">
-                      <span className="truncate">{volunteer.name}</span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedVolunteer(volunteer.id)
-                          setEditingRoles(true)
-                        }}
-                      >
-                        {language === "en" ? "Assign" : "Assigner"}
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-gray-500 text-center py-4">
-                  {language === "en" ? "No unassigned members" : "Aucun membre non assigné"}
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-      </TabsContent>
-
-      <TabsContent value="color" className="mt-6">
-        <div className="grid grid-cols-1 gap-8">
-          {/* Color Teams */}
-          {colorTeamsList.map((team) => {
-            const teamVolunteers = getColorTeamVolunteers(team.id)
-            return (
-              <div key={team.id} className="bg-white rounded-lg shadow-sm border overflow-hidden">
-                <div className={`px-6 py-4 border-b ${team.color} bg-opacity-20`}>
-                  <h3 className="font-medium text-lg flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-4 h-4 rounded-full ${team.color}`}></div>
-                      <span>{team.name[language]}</span>
-                    </div>
-                    <Badge variant="outline" className="ml-2">
-                      {teamVolunteers.length} {language === "en" ? "members" : "membres"}
-                    </Badge>
-                  </h3>
-                </div>
-                <div className="p-4">
-                  {teamVolunteers.length > 0 ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                      {teamVolunteers.map((volunteer) => (
-                        <div key={volunteer.id} className="flex items-center justify-between p-2 border rounded-md">
-                          <span className="truncate">{volunteer.name}</span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleAssignColorTeam(volunteer.id, "none")}
-                            disabled={volunteer.isSaving}
-                          >
-                            {volunteer.isSaving ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <X className="h-4 w-4 text-red-500" />
-                            )}
-                          </Button>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-gray-500 text-center py-4">
-                      {language === "en" ? "No members assigned" : "Aucun membre assigné"}
-                    </p>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-
-          {/* Unassigned Color Team Section */}
-          <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
-            <div className="bg-gray-50 px-6 py-4 border-b">
-              <h3 className="font-medium text-lg flex items-center justify-between">
-                <span>{language === "en" ? "Unassigned" : "Non assignés"}</span>
-                <Badge variant="outline" className="ml-2">
-                  {getUnassignedColorTeamVolunteers().length} {language === "en" ? "members" : "membres"}
-                </Badge>
-              </h3>
-            </div>
-            <div className="p-4">
-              {getUnassignedColorTeamVolunteers().length > 0 ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2">
-                  {getUnassignedColorTeamVolunteers().map((volunteer) => (
-                    <div key={volunteer.id} className="flex items-center justify-between p-2 border rounded-md">
-                      <span className="truncate">{volunteer.name}</span>
-                      <Select
-                        onValueChange={(value) => handleAssignColorTeam(volunteer.id, value)}
-                        disabled={volunteer.isSaving}
-                      >
-                        <SelectTrigger className="w-32">
-                          <SelectValue placeholder={language === "en" ? "Assign" : "Assigner"} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {colorTeamsList.map((team) => (
-                            <SelectItem key={team.id} value={team.id}>
-                              <div className="flex items-center gap-2">
-                                <div className={`w-3 h-3 rounded-full ${team.color}`}></div>
-                                <span>{team.name[language]}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-gray-500 text-center py-4">
-                  {language === "en" ? "No unassigned members" : "Aucun membre non assigné"}
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
-      </TabsContent>
 
       {/* All Volunteers View */}
       <div className="mt-8">
