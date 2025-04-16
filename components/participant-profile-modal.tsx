@@ -163,7 +163,12 @@ export default function ParticipantProfileModal({
       onClose()
     } catch (error) {
       console.error("Error saving changes:", error)
-      // You could add error handling UI here if needed
+      // Add error handling UI here
+      alert(
+        language === "en"
+          ? "Failed to save changes. Please try again."
+          : "Échec de l'enregistrement des modifications. Veuillez réessayer.",
+      )
     } finally {
       setIsSaving(false)
     }

@@ -164,20 +164,20 @@ export default function ParticipantsPage() {
   // Update the handleParticipantUpdate function to be async and return a promise
   // Find the handleParticipantUpdate function and replace it with this
   const handleParticipantUpdate = async (updatedParticipant: Participant) => {
-    // Update local state
-    setParticipants((prevParticipants) => {
-      const newParticipants = prevParticipants.map((p) => (p.id === updatedParticipant.id ? updatedParticipant : p))
-
-      // Save to localStorage
-      saveParticipantsToStorage(newParticipants)
-
-      return newParticipants
-    })
-
-    setSelectedParticipant(updatedParticipant)
-
-    // Update Google Sheet via API
     try {
+      // Update local state
+      setParticipants((prevParticipants) => {
+        const newParticipants = prevParticipants.map((p) => (p.id === updatedParticipant.id ? updatedParticipant : p))
+
+        // Save to localStorage
+        saveParticipantsToStorage(newParticipants)
+
+        return newParticipants
+      })
+
+      setSelectedParticipant(updatedParticipant)
+
+      // Update Google Sheet via API
       const response = await fetch("/api/update-participant", {
         method: "POST",
         headers: {
@@ -187,14 +187,21 @@ export default function ParticipantsPage() {
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        console.error("Error updating participant in Google Sheet:", errorData)
-        throw new Error("Failed to update participant in Google Sheet")
-      } else {
-        console.log("Participant updated successfully in Google Sheet")
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(`Failed to update participant in Google Sheet: ${errorData.error || response.statusText}`)
       }
+
+      console.log("Participant updated successfully in Google Sheet")
     } catch (error) {
       console.error("Error calling update-participant API:", error)
+
+      // Show error to user
+      alert(
+        language === "en"
+          ? `Failed to save changes: ${error instanceof Error ? error.message : String(error)}`
+          : `Échec de l'enregistrement des modifications: ${error instanceof Error ? error.message : String(error)}`,
+      )
+
       throw error
     }
   }

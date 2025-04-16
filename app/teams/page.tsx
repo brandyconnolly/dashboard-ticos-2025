@@ -14,6 +14,7 @@ import type { Participant } from "@/lib/types"
 
 // Import the storage utility functions
 import { saveParticipantsToStorage, getParticipantsFromStorage } from "@/lib/storage-utils"
+import { saveFamiliesToStorage } from "../../lib/storage-utils"
 
 // Volunteer type definition
 interface Volunteer {
@@ -52,11 +53,43 @@ export default function TeamsPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  // Fetch data directly in the component
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        console.log("Fetching data for teams page")
+  // First, let's add a standardized role mapping function at the top of the component
+  // Add this after the useState declarations
+  const roleToTeamMap = {
+    "setup-crew": "Setup Crew",
+    "cleanup-crew": "Cleanup Crew",
+    "food-crew": "Food Committee",
+    transportation: "Transportation Team",
+    "activities-coordinator": "Activities Team",
+    "prayer-team": "Prayer Team",
+    "worship-team": "Worship Team",
+  }
+
+  const teamToRoleMap = {
+    "Setup Crew": "setup-crew",
+    "Cleanup Crew": "cleanup-crew",
+    "Food Committee": "food-crew",
+    "Transportation Team": "transportation",
+    "Activities Team": "activities-coordinator",
+    "Prayer Team": "prayer-team",
+    "Worship Team": "worship-team",
+  }
+
+  // Now replace the fetchData function with this improved version
+  async function fetchData() {
+    try {
+      console.log("Fetching data for teams page")
+      setIsLoading(true)
+
+      // First try to get data from localStorage
+      const storedParticipants = getParticipantsFromStorage()
+
+      let parsedParticipants
+      if (storedParticipants) {
+        console.log("Using data from localStorage")
+        parsedParticipants = storedParticipants
+      } else {
+        // If not in localStorage, fetch from API
         const response = await fetch("/api/update-data")
 
         if (!response.ok) {
@@ -72,60 +105,66 @@ export default function TeamsPage() {
         console.log("Raw data received:", result.data.length, "rows")
 
         // Parse the data
-        const parsedParticipants = parseParticipants(result.data)
+        parsedParticipants = parseParticipants(result.data)
         const parsedFamilies = parseFamilies(result.data)
 
-        console.log("Parsed participants:", parsedParticipants.length)
-        console.log("Parsed families:", parsedFamilies.length)
-
-        // Transform participants into volunteers
-        const transformedVolunteers: Volunteer[] = parsedParticipants
-          .filter((p) => p.ageGroup === "adult" || p.ageGroup === "student-15+") // Only adults and teens can be volunteers
-          .map((participant: Participant) => {
-            // Extract preferences from roles
-            const preferences: string[] = []
-            if (participant.roles.includes("setup-crew")) preferences.push("Setup Crew")
-            if (participant.roles.includes("cleanup-crew")) preferences.push("Cleanup Crew")
-            if (participant.roles.includes("food-crew")) preferences.push("Food Committee")
-            if (participant.roles.includes("transportation")) preferences.push("Transportation Team")
-            if (participant.roles.includes("activities-coordinator")) preferences.push("Activities Team")
-            if (participant.roles.includes("prayer-team")) preferences.push("Prayer Team")
-            if (participant.roles.includes("worship-team")) preferences.push("Worship Team")
-            if (participant.customRole) preferences.push(participant.customRole)
-
-            // Determine assigned team based on roles
-            let assigned = "unassigned"
-            if (participant.roles.includes("setup-crew")) assigned = "Setup Crew"
-            else if (participant.roles.includes("cleanup-crew")) assigned = "Cleanup Crew"
-            else if (participant.roles.includes("food-crew")) assigned = "Food Committee"
-            else if (participant.roles.includes("transportation")) assigned = "Transportation Team"
-            else if (participant.roles.includes("activities-coordinator")) assigned = "Activities Team"
-            else if (participant.roles.includes("prayer-team")) assigned = "Prayer Team"
-            else if (participant.roles.includes("worship-team")) assigned = "Worship Team"
-
-            return {
-              id: participant.id,
-              name: participant.name,
-              preferences: preferences,
-              assigned: assigned,
-              colorTeam: participant.colorTeam,
-            }
-          })
-
-        console.log("Transformed volunteers:", transformedVolunteers.length)
-        setVolunteers(transformedVolunteers)
-        setIsLoading(false)
-      } catch (err) {
-        console.error("Error fetching data:", err)
-        setError(err instanceof Error ? err.message : String(err))
-        setIsLoading(false)
+        // Save to localStorage
+        saveParticipantsToStorage(parsedParticipants)
+        saveFamiliesToStorage(parsedFamilies)
       }
-    }
 
+      console.log("Parsed participants:", parsedParticipants.length)
+
+      // Transform participants into volunteers with standardized role mapping
+      const transformedVolunteers: Volunteer[] = parsedParticipants
+        .filter((p) => p.ageGroup === "adult" || p.ageGroup === "student-15+") // Only adults and teens can be volunteers
+        .map((participant: Participant) => {
+          // Extract preferences from roles
+          const preferences: string[] = []
+
+          // Use the standardized role mapping
+          for (const role of participant.roles) {
+            if (roleToTeamMap[role as keyof typeof roleToTeamMap]) {
+              preferences.push(roleToTeamMap[role as keyof typeof roleToTeamMap])
+            }
+          }
+
+          if (participant.customRole) preferences.push(participant.customRole)
+
+          // Determine assigned team based on roles - use only the first matching role
+          let assigned = "unassigned"
+          for (const role of participant.roles) {
+            const mappedTeam = roleToTeamMap[role as keyof typeof roleToTeamMap]
+            if (mappedTeam) {
+              assigned = mappedTeam
+              break // Take the first matching role
+            }
+          }
+
+          return {
+            id: participant.id,
+            name: participant.name,
+            preferences: preferences,
+            assigned: assigned,
+            colorTeam: participant.colorTeam,
+          }
+        })
+
+      console.log("Transformed volunteers:", transformedVolunteers.length)
+      setVolunteers(transformedVolunteers)
+      setIsLoading(false)
+    } catch (err) {
+      console.error("Error fetching data:", err)
+      setError(err instanceof Error ? err.message : String(err))
+      setIsLoading(false)
+    }
+  }
+
+  useEffect(() => {
     fetchData()
   }, [])
 
-  // Update the handleAssignTeam function to save changes to both localStorage and Google Sheets
+  // Replace the handleAssignTeam function with this improved version
   const handleAssignTeam = async (volunteerId: string, team: string) => {
     // Mark this volunteer as saving
     setVolunteers(
@@ -137,55 +176,25 @@ export default function TeamsPage() {
     try {
       // Get the participant from localStorage
       const storedParticipants = getParticipantsFromStorage()
-      if (!storedParticipants) return
+      if (!storedParticipants) {
+        throw new Error("No participants found in localStorage")
+      }
 
       const participant = storedParticipants.find((p) => p.id === volunteerId)
-      if (!participant) return
+      if (!participant) {
+        throw new Error(`Participant with ID ${volunteerId} not found`)
+      }
 
       // Update the participant's roles based on the team assignment
       let updatedRoles = [...participant.roles]
 
-      // Remove any existing team roles
-      updatedRoles = updatedRoles.filter(
-        (role) =>
-          ![
-            "setup-crew",
-            "cleanup-crew",
-            "food-crew",
-            "transportation",
-            "activities-coordinator",
-            "prayer-team",
-            "worship-team",
-          ].includes(role),
-      )
+      // Remove any existing team roles using our standardized mapping
+      updatedRoles = updatedRoles.filter((role) => !Object.keys(roleToTeamMap).includes(role))
 
       // Add the new team role if it's not "unassigned"
       if (team !== "unassigned") {
-        // Map the team name to a role
-        let roleToAdd: string | null = null
-        switch (team) {
-          case "Setup Crew":
-            roleToAdd = "setup-crew"
-            break
-          case "Cleanup Crew":
-            roleToAdd = "cleanup-crew"
-            break
-          case "Food Committee":
-            roleToAdd = "food-crew"
-            break
-          case "Transportation Team":
-            roleToAdd = "transportation"
-            break
-          case "Activities Team":
-            roleToAdd = "activities-coordinator"
-            break
-          case "Prayer Team":
-            roleToAdd = "prayer-team"
-            break
-          case "Worship Team":
-            roleToAdd = "worship-team"
-            break
-        }
+        // Map the team name to a role using our standardized mapping
+        const roleToAdd = teamToRoleMap[team as keyof typeof teamToRoleMap]
 
         if (roleToAdd) {
           updatedRoles.push(roleToAdd as any)
@@ -211,7 +220,8 @@ export default function TeamsPage() {
       })
 
       if (!response.ok) {
-        throw new Error("Failed to update participant in Google Sheet")
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(`Failed to update participant in Google Sheet: ${errorData.error || response.statusText}`)
       }
 
       console.log("Team assignment saved to Google Sheet successfully")
@@ -225,12 +235,24 @@ export default function TeamsPage() {
     } catch (error) {
       console.error("Error saving team assignment:", error)
 
-      // Update the volunteer state to remove saving indicator but keep the new assignment
-      setVolunteers(
-        volunteers.map((volunteer) =>
-          volunteer.id === volunteerId ? { ...volunteer, assigned: team, isSaving: false } : volunteer,
-        ),
+      // Show error to user
+      alert(
+        language === "en"
+          ? `Failed to save team assignment: ${error instanceof Error ? error.message : String(error)}`
+          : `Échec de l'enregistrement de l'équipe: ${error instanceof Error ? error.message : String(error)}`,
       )
+
+      // Revert the volunteer state to the original team
+      const originalVolunteer = volunteers.find((v) => v.id === volunteerId)
+      if (originalVolunteer) {
+        setVolunteers(
+          volunteers.map((volunteer) =>
+            volunteer.id === volunteerId
+              ? { ...volunteer, assigned: originalVolunteer.assigned, isSaving: false }
+              : volunteer,
+          ),
+        )
+      }
     }
   }
 

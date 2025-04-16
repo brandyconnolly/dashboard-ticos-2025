@@ -25,7 +25,16 @@ export async function POST(request: Request) {
     }
 
     // Parse your service account credentials
-    const keys = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON)
+    let keys
+    try {
+      keys = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON)
+      if (!keys.client_email || !keys.private_key) {
+        throw new Error("Invalid service account credentials format")
+      }
+    } catch (error) {
+      console.error("Error parsing service account JSON:", error)
+      return NextResponse.json({ error: "Invalid service account credentials" }, { status: 500 })
+    }
 
     // Create a new client
     const client = new google.auth.JWT(keys.client_email, null, keys.private_key, [
@@ -33,16 +42,27 @@ export async function POST(request: Request) {
     ])
 
     // Authorize the client
-    await client.authorize()
+    try {
+      await client.authorize()
+    } catch (error) {
+      console.error("Error authorizing with Google:", error)
+      return NextResponse.json({ error: "Failed to authorize with Google API" }, { status: 500 })
+    }
 
     // Create a Sheets API client
     const sheets = google.sheets({ version: "v4", auth: client })
     const spreadsheetId = process.env.SPREADSHEET_ID
 
     // Get the sheet data to find the participant's row
-    const sheetsResponse = await sheets.spreadsheets.get({
-      spreadsheetId,
-    })
+    let sheetsResponse
+    try {
+      sheetsResponse = await sheets.spreadsheets.get({
+        spreadsheetId,
+      })
+    } catch (error) {
+      console.error("Error getting spreadsheet:", error)
+      return NextResponse.json({ error: "Failed to access spreadsheet" }, { status: 500 })
+    }
 
     const firstSheetName = sheetsResponse.data.sheets?.[0].properties?.title
 
@@ -51,10 +71,16 @@ export async function POST(request: Request) {
     }
 
     // Get all data to find the participant
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `${firstSheetName}!A1:CZ1000`,
-    })
+    let response
+    try {
+      response = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `${firstSheetName}!A1:CZ1000`,
+      })
+    } catch (error) {
+      console.error("Error getting spreadsheet values:", error)
+      return NextResponse.json({ error: "Failed to read spreadsheet data" }, { status: 500 })
+    }
 
     if (!response.data.values || response.data.values.length === 0) {
       return NextResponse.json({ error: "No data found in the spreadsheet" }, { status: 404 })
@@ -111,13 +137,18 @@ export async function POST(request: Request) {
 
     // If we added new columns, update the headers
     if (updates.length > 0) {
-      await sheets.spreadsheets.values.batchUpdate({
-        spreadsheetId,
-        requestBody: {
-          valueInputOption: "RAW",
-          data: updates,
-        },
-      })
+      try {
+        await sheets.spreadsheets.values.batchUpdate({
+          spreadsheetId,
+          requestBody: {
+            valueInputOption: "RAW",
+            data: updates,
+          },
+        })
+      } catch (error) {
+        console.error("Error updating headers:", error)
+        return NextResponse.json({ error: "Failed to update spreadsheet headers" }, { status: 500 })
+      }
     }
 
     // Now update the participant data
@@ -154,13 +185,18 @@ export async function POST(request: Request) {
     })
 
     // Perform the updates
-    await sheets.spreadsheets.values.batchUpdate({
-      spreadsheetId,
-      requestBody: {
-        valueInputOption: "RAW",
-        data: dataUpdates,
-      },
-    })
+    try {
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          valueInputOption: "RAW",
+          data: dataUpdates,
+        },
+      })
+    } catch (error) {
+      console.error("Error updating spreadsheet values:", error)
+      return NextResponse.json({ error: "Failed to update spreadsheet data" }, { status: 500 })
+    }
 
     return NextResponse.json({
       success: true,

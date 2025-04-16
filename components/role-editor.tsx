@@ -57,6 +57,7 @@ export default function RoleEditor({ participant, onUpdate, language }: RoleEdit
     return option ? option.label[language] : role
   }
 
+  // Update the toggleRole function to handle role changes more consistently
   const toggleRole = (role: Role) => {
     let updatedRoles: Role[]
 
@@ -68,11 +69,17 @@ export default function RoleEditor({ participant, onUpdate, language }: RoleEdit
       console.log(`Adding role ${role} to participant ${participant.id}`)
     }
 
-    onUpdate({
+    // Create a new participant object with updated roles
+    const updatedParticipant = {
       ...participant,
       roles: updatedRoles,
       customRole: role === "custom" ? customRole : participant.customRole,
-    })
+    }
+
+    // Call the onUpdate function with the updated participant
+    onUpdate(updatedParticipant)
+
+    // Don't close the popover immediately to allow for multiple role selections
   }
 
   const handleCustomRoleChange = (value: string) => {
