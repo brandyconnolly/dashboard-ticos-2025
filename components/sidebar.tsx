@@ -118,22 +118,26 @@ export default function Sidebar() {
               onClick={toggleLanguage}
               className="px-2 py-1 h-8 bg-white text-blue-600 hover:bg-gray-100 flex items-center"
             >
-              <Globe className="h-3 w-3 mr-1" />
-              <span>{language === "en" ? "EN" : "FR"}</span>
+              <Globe className="h-3 w-3 mr-1 text-blue-600" />
+              <span className="text-blue-600 font-medium">{language === "en" ? "EN" : "FR"}</span>
             </Button>
             <Button
               size="sm"
               onClick={toggleViewMode}
               className="px-2 py-1 h-8 bg-white text-blue-600 hover:bg-gray-100 flex items-center"
             >
-              {viewMode === "desktop" ? <Monitor className="h-3 w-3" /> : <Smartphone className="h-3 w-3" />}
+              {viewMode === "desktop" ? (
+                <Monitor className="h-3 w-3 text-blue-600" />
+              ) : (
+                <Smartphone className="h-3 w-3 text-blue-600" />
+              )}
             </Button>
             <Button
               size="sm"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
               className="px-2 py-1 h-8 bg-white text-blue-600 hover:bg-gray-100 flex items-center justify-center"
             >
-              {mobileMenuOpen ? <X className="h-3 w-3" /> : <Menu className="h-3 w-3" />}
+              {mobileMenuOpen ? <X className="h-3 w-3 text-blue-600" /> : <Menu className="h-3 w-3 text-blue-600" />}
             </Button>
           </div>
         </div>
@@ -176,8 +180,8 @@ export default function Sidebar() {
             onClick={toggleLanguage}
             className="flex-1 bg-white text-blue-600 hover:bg-gray-100 flex items-center justify-center"
           >
-            <Globe className="mr-2 h-4 w-4" />
-            {language === "en" ? "English" : "Français"}
+            <Globe className="mr-2 h-4 w-4 text-blue-600" />
+            <span className="text-blue-600 font-medium">{language === "en" ? "English" : "Français"}</span>
           </Button>
           <Button
             size="sm"
@@ -186,13 +190,13 @@ export default function Sidebar() {
           >
             {viewMode === "desktop" ? (
               <>
-                <Smartphone className="mr-2 h-4 w-4" />
-                <span>Mobile</span>
+                <Smartphone className="mr-2 h-4 w-4 text-blue-600" />
+                <span className="text-blue-600 font-medium">Mobile</span>
               </>
             ) : (
               <>
-                <Monitor className="mr-2 h-4 w-4" />
-                <span>Desktop</span>
+                <Monitor className="mr-2 h-4 w-4 text-blue-600" />
+                <span className="text-blue-600 font-medium">Desktop</span>
               </>
             )}
           </Button>
