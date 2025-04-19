@@ -164,6 +164,12 @@ export default function RoomsPage() {
   // Add a new state for the search query after the other state declarations
   const [searchQuery, setSearchQuery] = useState<string>("")
 
+  // Add these new state variables after the other state declarations
+  const [allParticipants, setAllParticipants] = useState<any[]>([])
+  const [allFamilies, setAllFamilies] = useState<Family[]>([])
+  // Add state to track participant to family mapping
+  const [participantFamilyMap, setParticipantFamilyMap] = useState<Record<string, number>>({})
+
   // Fetch data directly in the component
   useEffect(() => {
     async function fetchData() {
@@ -189,6 +195,17 @@ export default function RoomsPage() {
 
         console.log("Parsed participants:", parsedParticipants.length)
         console.log("Parsed families:", parsedFamilies.length)
+
+        // Store all participants and families
+        setAllParticipants(parsedParticipants)
+        setAllFamilies(parsedFamilies)
+
+        // Create a mapping of participant names to family IDs
+        const nameToFamilyMap: Record<string, number> = {}
+        parsedParticipants.forEach((p) => {
+          nameToFamilyMap[p.name] = p.familyId
+        })
+        setParticipantFamilyMap(nameToFamilyMap)
 
         // Load saved room assignments if they exist
         const savedRoomAssignments = localStorage.getItem(ROOM_ASSIGNMENTS_STORAGE_KEY)
@@ -332,7 +349,9 @@ export default function RoomsPage() {
     setUnassignedGroups(unassignedGroups.filter((g) => g.id !== groupId))
   }
 
+  // Replace the handleRemoveOccupant function with this updated version:
   const handleRemoveOccupant = (floorName: string, roomId: string, occupantName: string) => {
+    // First, update the room by removing the occupant
     const updatedFloors = [...floors]
     const floorIndex = updatedFloors.findIndex((b) => b.name === floorName)
 
@@ -344,6 +363,75 @@ export default function RoomsPage() {
         ].occupants.filter((o) => o !== occupantName)
         setFloors(updatedFloors)
       }
+    }
+
+    // Now, handle adding the removed occupant back to unassigned groups
+    const familyId = participantFamilyMap[occupantName]
+
+    if (familyId) {
+      // Check if the family already exists in unassigned groups
+      const existingGroupIndex = unassignedGroups.findIndex((g) => g.id === familyId)
+
+      if (existingGroupIndex !== -1) {
+        // Family exists, add the member back
+        const updatedGroups = [...unassignedGroups]
+        updatedGroups[existingGroupIndex] = {
+          ...updatedGroups[existingGroupIndex],
+          members: [...updatedGroups[existingGroupIndex].members, occupantName],
+        }
+        setUnassignedGroups(updatedGroups)
+      } else {
+        // Family doesn't exist in unassigned groups, create a new entry
+        const family = allFamilies.find((f) => f.id === familyId)
+
+        if (family) {
+          // Find all family members that are currently unassigned
+          const familyMembers = allParticipants.filter((p) => p.familyId === familyId)
+          const familyMemberNames = familyMembers.map((m) => m.name)
+
+          // Create a new unassigned group for this family with just the removed member
+          const newGroup: UnassignedGroup = {
+            id: familyId,
+            name: family.name,
+            members: [occupantName],
+            specialNeeds: {
+              needsAccessible: false,
+              needsFirstFloor: false,
+              notes: "",
+            },
+          }
+
+          setUnassignedGroups([...unassignedGroups, newGroup])
+        } else {
+          // If we can't find the family, create an individual entry
+          const newGroup: UnassignedGroup = {
+            id: Date.now(), // Use timestamp as a unique ID
+            name: occupantName,
+            members: [occupantName],
+            specialNeeds: {
+              needsAccessible: false,
+              needsFirstFloor: false,
+              notes: "",
+            },
+          }
+
+          setUnassignedGroups([...unassignedGroups, newGroup])
+        }
+      }
+    } else {
+      // If we can't find the family ID, create an individual entry
+      const newGroup: UnassignedGroup = {
+        id: Date.now(), // Use timestamp as a unique ID
+        name: occupantName,
+        members: [occupantName],
+        specialNeeds: {
+          needsAccessible: false,
+          needsFirstFloor: false,
+          notes: "",
+        },
+      }
+
+      setUnassignedGroups([...unassignedGroups, newGroup])
     }
   }
 
