@@ -123,7 +123,7 @@ export default function TransportationPage() {
       if (!primaryContact) continue
 
       // Check if this family needs transportation based on form responses
-      const needsTransportation = checkFamilyNeedsTransportation(primaryContact, family)
+      const needsTransportation = checkFamilyNeedsTransportation(primaryContact, family, participantsData)
 
       if (needsTransportation) {
         // Add all family members to transportation
@@ -164,25 +164,31 @@ export default function TransportationPage() {
   }
 
   // Check if a family needs transportation based on form responses
-  function checkFamilyNeedsTransportation(primaryContact: Participant, family: Family): boolean {
-    // Check for specific bus transportation request in form fields
+  function checkFamilyNeedsTransportation(
+    primaryContact: Participant,
+    family: Family,
+    allParticipants: Participant[],
+  ): boolean {
+    // Check if the primary contact has the needsTransportation flag
+    if (primaryContact.needsTransportation === true) {
+      return true
+    }
 
-    // Check if the primary contact has a transportation field indicating bus request
+    // Check if any family member has the needsTransportation flag
+    const familyMembers = allParticipants.filter((p) => p.familyId === family.id)
+    if (familyMembers.some((member) => member.needsTransportation === true)) {
+      return true
+    }
+
+    // Check if the form response indicates bus transportation
+    const transportField = primaryContact.transportation || ""
     if (
-      primaryContact.transportation === "bus" ||
-      primaryContact.transportation === "yes" ||
-      primaryContact.transportation === true
+      typeof transportField === "string" &&
+      (transportField.toLowerCase().includes("bus") ||
+        transportField.toLowerCase().includes("autobus") ||
+        transportField.toLowerCase().includes("shuttle") ||
+        transportField.toLowerCase().includes("navette"))
     ) {
-      return true
-    }
-
-    // Check if there's a busTransportation field
-    if (primaryContact.busTransportation === "yes" || primaryContact.busTransportation === true) {
-      return true
-    }
-
-    // Check if there's a needsBus field
-    if (primaryContact.needsBus === "yes" || primaryContact.needsBus === true) {
       return true
     }
 
@@ -190,9 +196,10 @@ export default function TransportationPage() {
     if (primaryContact.comments) {
       const lowerComments = primaryContact.comments.toLowerCase()
       if (
-        (lowerComments.includes("bus") && !lowerComments.includes("no bus")) ||
-        (lowerComments.includes("need") && lowerComments.includes("transport")) ||
-        (lowerComments.includes("besoin") && lowerComments.includes("autobus"))
+        lowerComments.includes("bus") ||
+        lowerComments.includes("autobus") ||
+        lowerComments.includes("navette") ||
+        (lowerComments.includes("need") && lowerComments.includes("transport"))
       ) {
         return true
       }
