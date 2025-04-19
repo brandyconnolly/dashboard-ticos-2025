@@ -95,6 +95,7 @@ export default function TransportationPage() {
       }
 
       setTransportationStatus(transportStatus)
+      console.log("Loaded transportation status:", transportStatus.length, "participants")
     } catch (error) {
       console.error("Error loading data:", error)
       setError(error instanceof Error ? error.message : String(error))
@@ -110,61 +111,20 @@ export default function TransportationPage() {
     management: TransportationManagement,
   ): TransportationStatus[] {
     const initialStatus: TransportationStatus[] = []
-    const processedFamilies = new Set<number>()
 
-    // Process each participant
+    // Process each participant individually (not by family)
     for (const participant of participantsData) {
       // Skip if this participant is manually excluded
       if (management.excludedParticipants.includes(participant.id)) {
         continue
       }
 
-      // Get the family
-      const family = familiesData.find((f) => f.id === participant.familyId)
-      if (!family) continue
-
-      // Get the primary contact of the family
-      const primaryContact = participantsData.find((p) => p.id === family.primaryContactId)
-      if (!primaryContact) continue
-
-      // If this family has already been processed, skip
-      if (processedFamilies.has(family.id)) continue
-
-      // Check if this family needs transportation based on form responses
-      const needsTransportation = checkFamilyNeedsTransportation(primaryContact, family, participantsData)
-
-      if (needsTransportation) {
-        // Add all family members to transportation
-        const familyMembers = participantsData.filter((p) => p.familyId === family.id)
-
-        for (const member of familyMembers) {
-          // Skip if this member is manually excluded
-          if (management.excludedParticipants.includes(member.id)) {
-            continue
-          }
-
-          initialStatus.push({
-            participantId: member.id,
-            boardedTo: "not-boarded",
-            boardedFrom: "not-boarded",
-          })
-        }
-
-        // Mark this family as processed
-        processedFamilies.add(family.id)
-      }
-    }
-
-    // Add manually included participants
-    for (const participantId of management.includedParticipants) {
-      // Check if already added
-      if (!initialStatus.some((status) => status.participantId === participantId)) {
-        initialStatus.push({
-          participantId,
-          boardedTo: "not-boarded",
-          boardedFrom: "not-boarded",
-        })
-      }
+      // Add to transportation list by default
+      initialStatus.push({
+        participantId: participant.id,
+        boardedTo: "not-boarded",
+        boardedFrom: "not-boarded",
+      })
     }
 
     return initialStatus
@@ -176,30 +136,10 @@ export default function TransportationPage() {
     family: Family,
     allParticipants: Participant[],
   ): boolean {
-    // This function would check the form responses to determine if the family needs transportation
-    // For now, we'll use a simple check based on the primary contact's phone number
-    // In a real implementation, you would check the actual form responses
-
-    // Example: Check if the primary contact's phone number contains "bus" or "transport"
-    if (
-      primaryContact.phone &&
-      (primaryContact.phone.toLowerCase().includes("bus") || primaryContact.phone.toLowerCase().includes("transport"))
-    ) {
-      return true
-    }
-
-    // Example: Check if any family member has a comment about transportation
-    const familyMembers = allParticipants.filter((p) => p.familyId === family.id)
-    for (const member of familyMembers) {
-      if (
-        member.comments &&
-        (member.comments.toLowerCase().includes("bus") || member.comments.toLowerCase().includes("transport"))
-      ) {
-        return true
-      }
-    }
-
-    return false
+    // In this implementation, we'll consider everyone as potentially needing transportation
+    // This ensures all participants are available to be added to the transportation list
+    // The manual exclusion/inclusion system will handle who actually needs transportation
+    return true
   }
 
   // Save transportation status to localStorage whenever it changes
