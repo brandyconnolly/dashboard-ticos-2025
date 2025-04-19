@@ -111,35 +111,106 @@ export default function TransportationPage() {
     management: TransportationManagement,
   ): TransportationStatus[] {
     const initialStatus: TransportationStatus[] = []
+    const processedFamilies = new Set<number>()
 
-    // Process each participant individually (not by family)
-    for (const participant of participantsData) {
-      // Skip if this participant is manually excluded
-      if (management.excludedParticipants.includes(participant.id)) {
-        continue
+    // Process each family
+    for (const family of familiesData) {
+      // Skip if this family has already been processed
+      if (processedFamilies.has(family.id)) continue
+
+      // Get the primary contact of the family
+      const primaryContact = participantsData.find((p) => p.id === family.primaryContactId)
+      if (!primaryContact) continue
+
+      // Check if this family needs transportation based on form responses
+      const needsTransportation = checkFamilyNeedsTransportation(primaryContact, family)
+
+      if (needsTransportation) {
+        // Add all family members to transportation
+        const familyMembers = participantsData.filter((p) => p.familyId === family.id)
+
+        for (const member of familyMembers) {
+          // Skip if this member is manually excluded
+          if (management.excludedParticipants.includes(member.id)) {
+            continue
+          }
+
+          initialStatus.push({
+            participantId: member.id,
+            boardedTo: "not-boarded",
+            boardedFrom: "not-boarded",
+          })
+        }
+
+        // Mark this family as processed
+        processedFamilies.add(family.id)
       }
-
-      // Add to transportation list by default
-      initialStatus.push({
-        participantId: participant.id,
-        boardedTo: "not-boarded",
-        boardedFrom: "not-boarded",
-      })
     }
 
+    // Add manually included participants
+    for (const participantId of management.includedParticipants) {
+      // Check if already added
+      if (!initialStatus.some((status) => status.participantId === participantId)) {
+        initialStatus.push({
+          participantId,
+          boardedTo: "not-boarded",
+          boardedFrom: "not-boarded",
+        })
+      }
+    }
+
+    console.log(`Initialized transportation with ${initialStatus.length} participants`)
     return initialStatus
   }
 
   // Check if a family needs transportation based on form responses
-  function checkFamilyNeedsTransportation(
-    primaryContact: Participant,
-    family: Family,
-    allParticipants: Participant[],
-  ): boolean {
-    // In this implementation, we'll consider everyone as potentially needing transportation
-    // This ensures all participants are available to be added to the transportation list
-    // The manual exclusion/inclusion system will handle who actually needs transportation
-    return true
+  function checkFamilyNeedsTransportation(primaryContact: Participant, family: Family): boolean {
+    // Check if the primary contact has a comment or email indicating bus transportation
+    if (primaryContact.comments) {
+      const lowerComments = primaryContact.comments.toLowerCase()
+      if (
+        lowerComments.includes("bus") ||
+        lowerComments.includes("transport") ||
+        lowerComments.includes("autobus") ||
+        lowerComments.includes("navette")
+      ) {
+        return true
+      }
+    }
+
+    // Check if the email contains transportation keywords
+    if (primaryContact.email) {
+      const lowerEmail = primaryContact.email.toLowerCase()
+      if (
+        lowerEmail.includes("bus") ||
+        lowerEmail.includes("transport") ||
+        lowerEmail.includes("autobus") ||
+        lowerEmail.includes("navette")
+      ) {
+        return true
+      }
+    }
+
+    // Check if the phone contains transportation keywords
+    if (primaryContact.phone) {
+      const lowerPhone = primaryContact.phone.toLowerCase()
+      if (
+        lowerPhone.includes("bus") ||
+        lowerPhone.includes("transport") ||
+        lowerPhone.includes("autobus") ||
+        lowerPhone.includes("navette")
+      ) {
+        return true
+      }
+    }
+
+    // If the primary contact has a transportation role, include them
+    if (primaryContact.roles.includes("transportation")) {
+      return true
+    }
+
+    // Default to not needing transportation
+    return false
   }
 
   // Save transportation status to localStorage whenever it changes
