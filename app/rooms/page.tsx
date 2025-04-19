@@ -170,6 +170,20 @@ export default function RoomsPage() {
   // Add state to track participant to family mapping
   const [participantFamilyMap, setParticipantFamilyMap] = useState<Record<string, number>>({})
 
+  // Helper function to extract last name from a full name
+  const getLastName = (name: string) => {
+    const parts = name.split(" ")
+    return parts.length > 1 ? parts[parts.length - 1] : name
+  }
+
+  // Helper function to get the sort key for a group (last name of first member or group name)
+  const getGroupSortKey = (group: UnassignedGroup) => {
+    if (group.members.length > 0) {
+      return getLastName(group.members[0])
+    }
+    return getLastName(group.name)
+  }
+
   // Fetch data directly in the component
   useEffect(() => {
     async function fetchData() {
@@ -566,19 +580,35 @@ export default function RoomsPage() {
   }
 
   // Add a function to filter unassigned groups based on search query
-  const filteredUnassignedGroups = unassignedGroups.filter((group) => {
-    if (!searchQuery.trim()) return true
+  const filteredUnassignedGroups = unassignedGroups
+    .filter((group) => {
+      if (!searchQuery.trim()) return true
 
-    const query = searchQuery.toLowerCase().trim()
+      const query = searchQuery.toLowerCase().trim()
 
-    // Search in group name
-    if (group.name.toLowerCase().includes(query)) return true
+      // Search in group name
+      if (group.name.toLowerCase().includes(query)) return true
 
-    // Search in member names
-    if (group.members.some((member) => member.toLowerCase().includes(query))) return true
+      // Search in member names
+      if (group.members.some((member) => member.toLowerCase().includes(query))) return true
 
-    return false
-  })
+      return false
+    })
+    // Sort by last name
+    .sort((a, b) => {
+      const lastNameA = getGroupSortKey(a)
+      const lastNameB = getGroupSortKey(b)
+      return lastNameA.localeCompare(lastNameB)
+    })
+
+  // Sort room occupants by last name
+  const getSortedOccupants = (occupants: string[]) => {
+    return [...occupants].sort((a, b) => {
+      const lastNameA = getLastName(a)
+      const lastNameB = getLastName(b)
+      return lastNameA.localeCompare(lastNameB)
+    })
+  }
 
   if (isLoading) {
     return (
@@ -656,77 +686,6 @@ export default function RoomsPage() {
                   <DialogContent className="sm:max-w-[500px]">
                     <DialogHeader>
                       <DialogTitle className="text-xl">
-                        {language === "en" ? "Add New Room" : "Ajouter une nouvelle chambre"}
-                      </DialogTitle>
-                    </DialogHeader>
-                    <div className="grid gap-4 py-4">
-                      <div className="grid gap-2">
-                        <Label htmlFor="roomId">{language === "en" ? "Room Number" : "Numéro de chambre"}</Label>
-                        <Input
-                          id="roomId"
-                          value={newRoom.id}
-                          onChange={(e) => setNewRoom({ ...newRoom, id: e.target.value })}
-                          placeholder="e.g. 101"
-                        />
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="beds">{language === "en" ? "Number of Beds" : "Nombre de lits"}</Label>
-                        <Input
-                          id="beds"
-                          type="number"
-                          min="1"
-                          value={newRoom.beds}
-                          onChange={(e) => setNewRoom({ ...newRoom, beds: Number.parseInt(e.target.value) || 1 })}
-                        />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          id="accessible"
-                          checked={newRoom.accessible || false}
-                          onCheckedChange={(checked) => setNewRoom({ ...newRoom, accessible: checked === true })}
-                        />
-                        <Label htmlFor="accessible">
-                          {language === "en" ? "Wheelchair Accessible" : "Accessible en fauteuil roulant"}
-                        </Label>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          id="firstFloor"
-                          checked={newRoom.firstFloor || false}
-                          onCheckedChange={(checked) => setNewRoom({ ...newRoom, firstFloor: checked === true })}
-                        />
-                        <Label htmlFor="firstFloor">
-                          {language === "en" ? "First Floor Room" : "Chambre au premier étage"}
-                        </Label>
-                      </div>
-                      <div className="grid gap-2">
-                        <Label htmlFor="notes">{language === "en" ? "Notes" : "Notes"}</Label>
-                        <Input
-                          id="notes"
-                          value={newRoom.notes}
-                          onChange={(e) => setNewRoom({ ...newRoom, notes: e.target.value })}
-                          placeholder={
-                            language === "en"
-                              ? "Any special notes about this room"
-                              : "Notes spéciales sur cette chambre"
-                          }
-                        />
-                      </div>
-                      <Button onClick={handleAddRoom}>{language === "en" ? "Add Room" : "Ajouter la chambre"}</Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-
-                <Dialog open={floorDialogOpen} onOpenChange={setFloorDialogOpen}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="sm">
-                      <Plus className="h-4 w-4 mr-2" />
-                      {language === "en" ? "Add Floor" : "Ajouter un étage"}
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="sm:max-w-[500px]">
-                    <DialogHeader>
-                      <DialogTitle className="text-xl">
                         {language === "en" ? "Add New Floor" : "Ajouter un nouvel étage"}
                       </DialogTitle>
                     </DialogHeader>
@@ -762,6 +721,8 @@ export default function RoomsPage() {
                     {floor.rooms.map((room) => {
                       const status = getRoomStatus(room)
                       const statusColor = getRoomStatusColor(status)
+                      // Sort occupants by last name
+                      const sortedOccupants = getSortedOccupants(room.occupants)
 
                       return (
                         <Card
@@ -804,9 +765,9 @@ export default function RoomsPage() {
                           </CardHeader>
 
                           <CardContent className="pb-2">
-                            {room.occupants.length > 0 ? (
+                            {sortedOccupants.length > 0 ? (
                               <ul className="space-y-1">
-                                {room.occupants.map((occupant, idx) => (
+                                {sortedOccupants.map((occupant, idx) => (
                                   <li
                                     key={idx}
                                     className="flex justify-between items-center text-sm py-1 border-b border-gray-100 last:border-0"
@@ -939,7 +900,8 @@ export default function RoomsPage() {
                       </div>
 
                       <ul className="text-xs space-y-0.5 ml-2 list-disc">
-                        {group.members.map((member, idx) => (
+                        {/* Sort members by last name */}
+                        {getSortedOccupants(group.members).map((member, idx) => (
                           <li key={idx}>{member}</li>
                         ))}
                       </ul>
