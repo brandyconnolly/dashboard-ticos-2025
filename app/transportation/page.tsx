@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import DataStatus from "@/components/data-status"
 import { Button } from "@/components/ui/button"
-import { Bus, Plus, Check, X, Search } from "lucide-react"
+import { Bus, Plus, Check, X, Search, RefreshCw } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -24,10 +24,9 @@ interface TransportationStatus {
   participantId: string
   boardedTo: BoardingStatus
   boardedFrom: BoardingStatus
-  isManuallyAdded?: boolean
 }
 
-// Track manually excluded participants
+// Track manually added/removed participants
 interface TransportationManagement {
   excludedParticipants: string[] // IDs of participants manually removed
   includedParticipants: string[] // IDs of participants manually added
@@ -46,57 +45,162 @@ export default function TransportationPage() {
   const [searchDialogOpen, setSearchDialogOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<"all" | "to" | "from">("all")
   const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Load data
   useEffect(() => {
-    async function loadData() {
-      setIsLoading(true)
-      try {
-        // Try to get data from localStorage first
-        let participantsData = getParticipantsFromStorage()
-        let familiesData = getFamiliesFromStorage()
+    loadData()
+  }, [])
 
-        // If no data in localStorage, fetch from API
-        if (!participantsData || !familiesData) {
-          const sheetData = await fetchSheetData()
-          participantsData = parseParticipants(sheetData)
-          familiesData = parseFamilies(sheetData)
+  // Function to load data from Google Sheets and localStorage
+  async function loadData() {
+    setIsLoading(true)
+    try {
+      // Try to get data from localStorage first
+      let participantsData = getParticipantsFromStorage()
+      let familiesData = getFamiliesFromStorage()
+
+      // If no data in localStorage, fetch from API
+      if (!participantsData || !familiesData) {
+        const sheetData = await fetchSheetData()
+        participantsData = parseParticipants(sheetData)
+        familiesData = parseFamilies(sheetData)
+      }
+
+      setParticipants(participantsData)
+      setFamilies(familiesData)
+
+      // Load transportation management from localStorage
+      const savedTransportManagement = localStorage.getItem("retreat-transportation-management")
+      let transportManagement: TransportationManagement = {
+        excludedParticipants: [],
+        includedParticipants: [],
+      }
+
+      if (savedTransportManagement) {
+        transportManagement = JSON.parse(savedTransportManagement)
+      }
+      setTransportationManagement(transportManagement)
+
+      // Load transportation status from localStorage
+      const savedTransportStatus = localStorage.getItem("retreat-transportation-status")
+      let transportStatus: TransportationStatus[] = []
+
+      if (savedTransportStatus) {
+        transportStatus = JSON.parse(savedTransportStatus)
+      } else {
+        // Initialize transportation status based on Google Sheet data
+        transportStatus = initializeTransportationFromSheets(participantsData, familiesData, transportManagement)
+      }
+
+      setTransportationStatus(transportStatus)
+    } catch (error) {
+      console.error("Error loading data:", error)
+      setError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Initialize transportation status from Google Sheets data
+  function initializeTransportationFromSheets(
+    participantsData: Participant[],
+    familiesData: Family[],
+    management: TransportationManagement,
+  ): TransportationStatus[] {
+    const initialStatus: TransportationStatus[] = []
+    const processedFamilies = new Set<number>()
+
+    // Process each participant
+    for (const participant of participantsData) {
+      // Skip if this participant is manually excluded
+      if (management.excludedParticipants.includes(participant.id)) {
+        continue
+      }
+
+      // Get the family
+      const family = familiesData.find((f) => f.id === participant.familyId)
+      if (!family) continue
+
+      // Get the primary contact of the family
+      const primaryContact = participantsData.find((p) => p.id === family.primaryContactId)
+      if (!primaryContact) continue
+
+      // If this family has already been processed, skip
+      if (processedFamilies.has(family.id)) continue
+
+      // Check if this family needs transportation based on form responses
+      const needsTransportation = checkFamilyNeedsTransportation(primaryContact, family, participantsData)
+
+      if (needsTransportation) {
+        // Add all family members to transportation
+        const familyMembers = participantsData.filter((p) => p.familyId === family.id)
+
+        for (const member of familyMembers) {
+          // Skip if this member is manually excluded
+          if (management.excludedParticipants.includes(member.id)) {
+            continue
+          }
+
+          initialStatus.push({
+            participantId: member.id,
+            boardedTo: "not-boarded",
+            boardedFrom: "not-boarded",
+          })
         }
 
-        setParticipants(participantsData)
-        setFamilies(familiesData)
-
-        // Load transportation status from localStorage
-        const savedTransportStatus = localStorage.getItem("retreat-transportation-status")
-        const savedTransportManagement = localStorage.getItem("retreat-transportation-management")
-
-        let transportStatus: TransportationStatus[] = []
-        let transportManagement: TransportationManagement = {
-          excludedParticipants: [],
-          includedParticipants: [],
-        }
-
-        if (savedTransportStatus) {
-          transportStatus = JSON.parse(savedTransportStatus)
-        }
-
-        if (savedTransportManagement) {
-          transportManagement = JSON.parse(savedTransportManagement)
-        }
-
-        setTransportationStatus(transportStatus)
-        setTransportationManagement(transportManagement)
-      } catch (error) {
-        console.error("Error loading data:", error)
-        setError(error instanceof Error ? error.message : String(error))
-      } finally {
-        setIsLoading(false)
+        // Mark this family as processed
+        processedFamilies.add(family.id)
       }
     }
 
-    loadData()
-  }, [])
+    // Add manually included participants
+    for (const participantId of management.includedParticipants) {
+      // Check if already added
+      if (!initialStatus.some((status) => status.participantId === participantId)) {
+        initialStatus.push({
+          participantId,
+          boardedTo: "not-boarded",
+          boardedFrom: "not-boarded",
+        })
+      }
+    }
+
+    return initialStatus
+  }
+
+  // Check if a family needs transportation based on form responses
+  function checkFamilyNeedsTransportation(
+    primaryContact: Participant,
+    family: Family,
+    allParticipants: Participant[],
+  ): boolean {
+    // This function would check the form responses to determine if the family needs transportation
+    // For now, we'll use a simple check based on the primary contact's phone number
+    // In a real implementation, you would check the actual form responses
+
+    // Example: Check if the primary contact's phone number contains "bus" or "transport"
+    if (
+      primaryContact.phone &&
+      (primaryContact.phone.toLowerCase().includes("bus") || primaryContact.phone.toLowerCase().includes("transport"))
+    ) {
+      return true
+    }
+
+    // Example: Check if any family member has a comment about transportation
+    const familyMembers = allParticipants.filter((p) => p.familyId === family.id)
+    for (const member of familyMembers) {
+      if (
+        member.comments &&
+        (member.comments.toLowerCase().includes("bus") || member.comments.toLowerCase().includes("transport"))
+      ) {
+        return true
+      }
+    }
+
+    return false
+  }
 
   // Save transportation status to localStorage whenever it changes
   useEffect(() => {
@@ -109,6 +213,63 @@ export default function TransportationPage() {
   useEffect(() => {
     localStorage.setItem("retreat-transportation-management", JSON.stringify(transportationManagement))
   }, [transportationManagement])
+
+  // Refresh transportation data from Google Sheets
+  const refreshTransportationData = async () => {
+    setIsRefreshing(true)
+    try {
+      // Fetch fresh data from Google Sheets
+      const sheetData = await fetchSheetData()
+      const newParticipants = parseParticipants(sheetData)
+      const newFamilies = parseFamilies(sheetData)
+
+      setParticipants(newParticipants)
+      setFamilies(newFamilies)
+
+      // Re-initialize transportation status while preserving manual changes
+      const updatedStatus = initializeTransportationFromSheets(newParticipants, newFamilies, transportationManagement)
+
+      // Preserve boarding status for existing participants
+      const finalStatus = updatedStatus.map((newStatus) => {
+        const existingStatus = transportationStatus.find(
+          (oldStatus) => oldStatus.participantId === newStatus.participantId,
+        )
+
+        if (existingStatus) {
+          return {
+            ...newStatus,
+            boardedTo: existingStatus.boardedTo,
+            boardedFrom: existingStatus.boardedFrom,
+          }
+        }
+
+        return newStatus
+      })
+
+      setTransportationStatus(finalStatus)
+      localStorage.setItem("retreat-transportation-status", JSON.stringify(finalStatus))
+
+      toast({
+        title: language === "en" ? "Data Refreshed" : "Données rafraîchies",
+        description:
+          language === "en"
+            ? "Transportation data has been updated from Google Sheets"
+            : "Les données de transport ont été mises à jour depuis Google Sheets",
+      })
+    } catch (error) {
+      console.error("Error refreshing data:", error)
+      toast({
+        variant: "destructive",
+        title: language === "en" ? "Error" : "Erreur",
+        description:
+          language === "en"
+            ? "Failed to refresh transportation data"
+            : "Échec de l'actualisation des données de transport",
+      })
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
 
   // Get participant by ID
   const getParticipant = (id: string) => {
@@ -144,7 +305,6 @@ export default function TransportationPage() {
           participantId: participant.id,
           boardedTo: "not-boarded",
           boardedFrom: "not-boarded",
-          isManuallyAdded: true,
         },
       ])
 
@@ -350,6 +510,20 @@ export default function TransportationPage() {
           </div>
 
           <div className="flex gap-2 mt-4 md:mt-0">
+            <Button variant="outline" onClick={refreshTransportationData} disabled={isRefreshing} className="mr-2">
+              {isRefreshing ? (
+                <>
+                  <div className="animate-spin mr-2 h-4 w-4 border-2 border-b-transparent rounded-full"></div>
+                  {language === "en" ? "Refreshing..." : "Actualisation..."}
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  {language === "en" ? "Refresh from Sheets" : "Actualiser depuis Sheets"}
+                </>
+              )}
+            </Button>
+
             <Dialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen}>
               <DialogTrigger asChild>
                 <Button size="lg" className="text-lg">
