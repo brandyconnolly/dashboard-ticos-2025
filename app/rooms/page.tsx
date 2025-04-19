@@ -3,16 +3,18 @@
 import { useState, useEffect } from "react"
 import DataStatus from "@/components/data-status"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import { Edit, Plus, Trash2, AlertTriangle } from "lucide-react"
+import { Edit, Plus, Trash2, AlertTriangle, Save, Loader2 } from "lucide-react"
 import Link from "next/link"
 import { parseParticipants, parseFamilies } from "@/lib/fetch-data"
 import type { Family } from "@/lib/types"
+import { useLanguage } from "@/hooks/use-language"
+import { toast } from "@/components/ui/use-toast"
 
 // Room type definition
 interface Room {
@@ -20,11 +22,12 @@ interface Room {
   beds: number
   occupants: string[]
   accessible?: boolean
+  firstFloor?: boolean
   notes?: string
 }
 
-// Building type definition
-interface Building {
+// Floor type definition
+interface Floor {
   name: string
   rooms: Room[]
 }
@@ -34,51 +37,63 @@ interface UnassignedGroup {
   id: number
   name: string
   members: string[]
-  specialNeeds: boolean
-  prefersSingle?: boolean
-  needsAccessible?: boolean
+  specialNeeds: {
+    needsAccessible?: boolean
+    needsFirstFloor?: boolean
+    notes?: string
+  }
 }
 
+// Room assignment storage key
+const ROOM_ASSIGNMENTS_STORAGE_KEY = "retreat-room-assignments"
+const SPECIAL_NEEDS_STORAGE_KEY = "retreat-special-needs"
+
 export default function RoomsPage() {
-  const [language, setLanguage] = useState<"en" | "fr">("en")
-  const [buildings, setBuildings] = useState<Building[]>([
+  const { language } = useLanguage()
+  const [floors, setFloors] = useState<Floor[]>([
     {
-      name: "Building A",
+      name: "Floor 1",
       rooms: [
-        { id: "A1", beds: 4, occupants: [], notes: "" },
-        { id: "A2", beds: 6, occupants: [], notes: "" },
-        { id: "A3", beds: 4, occupants: [], notes: "" },
-        { id: "A4", beds: 2, occupants: [], accessible: true, notes: "Ground floor, wheelchair accessible" },
+        { id: "101", beds: 4, occupants: [], notes: "Near elevator" },
+        { id: "102", beds: 2, occupants: [], accessible: true, firstFloor: true, notes: "Wheelchair accessible" },
+        { id: "103", beds: 4, occupants: [], firstFloor: true, notes: "" },
+        { id: "104", beds: 2, occupants: [], firstFloor: true, notes: "" },
       ],
     },
     {
-      name: "Building B",
+      name: "Floor 2",
       rooms: [
-        { id: "B1", beds: 4, occupants: [], notes: "" },
-        { id: "B2", beds: 4, occupants: [], notes: "" },
-        { id: "B3", beds: 6, occupants: [], notes: "" },
+        { id: "201", beds: 4, occupants: [], notes: "" },
+        { id: "202", beds: 4, occupants: [], notes: "" },
+        { id: "203", beds: 6, occupants: [], notes: "" },
+        { id: "204", beds: 2, occupants: [], notes: "" },
       ],
     },
     {
-      name: "Building C",
+      name: "Floor 3",
       rooms: [
-        { id: "C1", beds: 4, occupants: [], notes: "" },
-        { id: "C2", beds: 6, occupants: [], notes: "Near restrooms" },
-        { id: "C3", beds: 4, occupants: [], notes: "" },
+        { id: "301", beds: 4, occupants: [], notes: "" },
+        { id: "302", beds: 6, occupants: [], notes: "Near restrooms" },
+        { id: "303", beds: 4, occupants: [], notes: "" },
+        { id: "304", beds: 2, occupants: [], notes: "" },
       ],
     },
   ])
   const [unassignedGroups, setUnassignedGroups] = useState<UnassignedGroup[]>([])
-  const [selectedBuilding, setSelectedBuilding] = useState("Building A")
+  const [selectedFloor, setSelectedFloor] = useState("Floor 1")
   const [editingRoom, setEditingRoom] = useState<Room | null>(null)
-  const [editingBuilding, setEditingBuilding] = useState<string | null>(null)
-  const [newBuilding, setNewBuilding] = useState({ name: "", rooms: [] })
+  const [editingFloor, setEditingFloor] = useState<string | null>(null)
+  const [newFloor, setNewFloor] = useState({ name: "", rooms: [] })
   const [newRoom, setNewRoom] = useState<Room>({ id: "", beds: 2, occupants: [], notes: "" })
   const [dialogOpen, setDialogOpen] = useState(false)
-  const [buildingDialogOpen, setBuildingDialogOpen] = useState(false)
+  const [floorDialogOpen, setFloorDialogOpen] = useState(false)
   const [newRoomDialogOpen, setNewRoomDialogOpen] = useState(false)
+  const [specialNeedsDialogOpen, setSpecialNeedsDialogOpen] = useState(false)
+  const [selectedGroup, setSelectedGroup] = useState<UnassignedGroup | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
 
   // Fetch data directly in the component
   useEffect(() => {
@@ -106,36 +121,73 @@ export default function RoomsPage() {
         console.log("Parsed participants:", parsedParticipants.length)
         console.log("Parsed families:", parsedFamilies.length)
 
+        // Load saved room assignments if they exist
+        const savedRoomAssignments = localStorage.getItem(ROOM_ASSIGNMENTS_STORAGE_KEY)
+        if (savedRoomAssignments) {
+          try {
+            const parsedAssignments = JSON.parse(savedRoomAssignments)
+            setFloors(parsedAssignments)
+            console.log("Loaded saved room assignments")
+          } catch (e) {
+            console.error("Error parsing saved room assignments:", e)
+          }
+        }
+
+        // Load saved special needs if they exist
+        const savedSpecialNeeds = localStorage.getItem(SPECIAL_NEEDS_STORAGE_KEY)
+        let specialNeeds: Record<number, { needsAccessible?: boolean; needsFirstFloor?: boolean; notes?: string }> = {}
+
+        if (savedSpecialNeeds) {
+          try {
+            specialNeeds = JSON.parse(savedSpecialNeeds)
+            console.log("Loaded saved special needs")
+          } catch (e) {
+            console.error("Error parsing saved special needs:", e)
+          }
+        }
+
         // Transform families into unassigned groups
         const transformedGroups: UnassignedGroup[] = parsedFamilies.map((family: Family) => {
           const familyMembers = parsedParticipants.filter((p) => p.familyId === family.id)
           const memberNames = familyMembers.map((m) => m.name)
 
-          // Check if any family member has special needs
+          // Check if any family member has special needs from comments
           const hasSpecialNeeds = familyMembers.some(
             (m) =>
-              m.roles.includes("custom") &&
-              (m.customRole?.toLowerCase().includes("wheelchair") ||
-                m.customRole?.toLowerCase().includes("accessible")),
+              m.comments &&
+              (m.comments.toLowerCase().includes("wheelchair") ||
+                m.comments.toLowerCase().includes("accessible") ||
+                m.comments.toLowerCase().includes("first floor") ||
+                m.comments.toLowerCase().includes("ground floor")),
           )
 
-          // Check if family prefers single room
-          const prefersSingle =
-            familyMembers.length === 1 ||
-            familyMembers.some((m) => m.roles.includes("custom") && m.customRole?.toLowerCase().includes("single"))
+          // Get saved special needs for this family
+          const savedNeeds = specialNeeds[family.id] || {}
 
           return {
             id: family.id,
             name: family.name,
             members: memberNames,
-            specialNeeds: hasSpecialNeeds,
-            prefersSingle: prefersSingle,
-            needsAccessible: hasSpecialNeeds,
+            specialNeeds: {
+              needsAccessible: savedNeeds.needsAccessible || hasSpecialNeeds,
+              needsFirstFloor: savedNeeds.needsFirstFloor || hasSpecialNeeds,
+              notes: savedNeeds.notes || "",
+            },
           }
         })
 
-        console.log("Transformed unassigned groups:", transformedGroups.length)
-        setUnassignedGroups(transformedGroups)
+        // Filter out families that are already assigned to rooms
+        const assignedOccupants = new Set<string>()
+        floors.forEach((floor) =>
+          floor.rooms.forEach((room) => room.occupants.forEach((occupant) => assignedOccupants.add(occupant))),
+        )
+
+        const filteredGroups = transformedGroups.filter(
+          (group) => !group.members.every((member) => assignedOccupants.has(member)),
+        )
+
+        console.log("Transformed unassigned groups:", filteredGroups.length)
+        setUnassignedGroups(filteredGroups)
         setIsLoading(false)
       } catch (err) {
         console.error("Error fetching data:", err)
@@ -147,22 +199,63 @@ export default function RoomsPage() {
     fetchData()
   }, [])
 
-  const handleAssignRoom = (buildingName: string, roomId: string, groupId: number) => {
+  // Save room assignments whenever they change
+  useEffect(() => {
+    if (!isLoading && floors.length > 0) {
+      setHasUnsavedChanges(true)
+    }
+  }, [floors, isLoading])
+
+  const saveChanges = () => {
+    setIsSaving(true)
+    try {
+      // Save room assignments
+      localStorage.setItem(ROOM_ASSIGNMENTS_STORAGE_KEY, JSON.stringify(floors))
+
+      // Save special needs
+      const specialNeeds: Record<number, { needsAccessible?: boolean; needsFirstFloor?: boolean; notes?: string }> = {}
+      unassignedGroups.forEach((group) => {
+        specialNeeds[group.id] = group.specialNeeds
+      })
+      localStorage.setItem(SPECIAL_NEEDS_STORAGE_KEY, JSON.stringify(specialNeeds))
+
+      setHasUnsavedChanges(false)
+      toast({
+        title: language === "en" ? "Changes Saved" : "Modifications enregistrées",
+        description:
+          language === "en" ? "Room assignments have been saved" : "Les attributions de chambres ont été enregistrées",
+      })
+    } catch (e) {
+      console.error("Error saving room assignments:", e)
+      toast({
+        variant: "destructive",
+        title: language === "en" ? "Error" : "Erreur",
+        description:
+          language === "en"
+            ? "Failed to save room assignments"
+            : "Échec de l'enregistrement des attributions de chambres",
+      })
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
+  const handleAssignRoom = (floorName: string, roomId: string, groupId: number) => {
     const group = unassignedGroups.find((g) => g.id === groupId)
     if (!group) return
 
     // Update rooms
-    const updatedBuildings = [...buildings]
-    const buildingIndex = updatedBuildings.findIndex((b) => b.name === buildingName)
+    const updatedFloors = [...floors]
+    const floorIndex = updatedFloors.findIndex((b) => b.name === floorName)
 
-    if (buildingIndex !== -1) {
-      const roomIndex = updatedBuildings[buildingIndex].rooms.findIndex((r) => r.id === roomId)
+    if (floorIndex !== -1) {
+      const roomIndex = updatedFloors[floorIndex].rooms.findIndex((r) => r.id === roomId)
       if (roomIndex !== -1) {
-        updatedBuildings[buildingIndex].rooms[roomIndex].occupants = [
-          ...updatedBuildings[buildingIndex].rooms[roomIndex].occupants,
+        updatedFloors[floorIndex].rooms[roomIndex].occupants = [
+          ...updatedFloors[floorIndex].rooms[roomIndex].occupants,
           ...group.members,
         ]
-        setBuildings(updatedBuildings)
+        setFloors(updatedFloors)
       }
     }
 
@@ -170,56 +263,56 @@ export default function RoomsPage() {
     setUnassignedGroups(unassignedGroups.filter((g) => g.id !== groupId))
   }
 
-  const handleRemoveOccupant = (buildingName: string, roomId: string, occupantName: string) => {
-    const updatedBuildings = [...buildings]
-    const buildingIndex = updatedBuildings.findIndex((b) => b.name === buildingName)
+  const handleRemoveOccupant = (floorName: string, roomId: string, occupantName: string) => {
+    const updatedFloors = [...floors]
+    const floorIndex = updatedFloors.findIndex((b) => b.name === floorName)
 
-    if (buildingIndex !== -1) {
-      const roomIndex = updatedBuildings[buildingIndex].rooms.findIndex((r) => r.id === roomId)
+    if (floorIndex !== -1) {
+      const roomIndex = updatedFloors[floorIndex].rooms.findIndex((r) => r.id === roomId)
       if (roomIndex !== -1) {
-        updatedBuildings[buildingIndex].rooms[roomIndex].occupants = updatedBuildings[buildingIndex].rooms[
+        updatedFloors[floorIndex].rooms[roomIndex].occupants = updatedFloors[floorIndex].rooms[
           roomIndex
         ].occupants.filter((o) => o !== occupantName)
-        setBuildings(updatedBuildings)
+        setFloors(updatedFloors)
       }
     }
   }
 
   const handleUpdateRoom = () => {
-    if (!editingRoom || !editingBuilding) return
+    if (!editingRoom || !editingFloor) return
 
-    const updatedBuildings = [...buildings]
-    const buildingIndex = updatedBuildings.findIndex((b) => b.name === editingBuilding)
+    const updatedFloors = [...floors]
+    const floorIndex = updatedFloors.findIndex((b) => b.name === editingFloor)
 
-    if (buildingIndex !== -1) {
-      const roomIndex = updatedBuildings[buildingIndex].rooms.findIndex((r) => r.id === editingRoom.id)
+    if (floorIndex !== -1) {
+      const roomIndex = updatedFloors[floorIndex].rooms.findIndex((r) => r.id === editingRoom.id)
       if (roomIndex !== -1) {
-        updatedBuildings[buildingIndex].rooms[roomIndex] = editingRoom
-        setBuildings(updatedBuildings)
+        updatedFloors[floorIndex].rooms[roomIndex] = editingRoom
+        setFloors(updatedFloors)
       }
     }
 
     setEditingRoom(null)
-    setEditingBuilding(null)
+    setEditingFloor(null)
     setDialogOpen(false)
   }
 
-  const handleAddBuilding = () => {
-    if (newBuilding.name.trim()) {
-      setBuildings([...buildings, { ...newBuilding, name: newBuilding.name.trim() }])
-      setNewBuilding({ name: "", rooms: [] })
-      setBuildingDialogOpen(false)
+  const handleAddFloor = () => {
+    if (newFloor.name.trim()) {
+      setFloors([...floors, { ...newFloor, name: newFloor.name.trim() }])
+      setNewFloor({ name: "", rooms: [] })
+      setFloorDialogOpen(false)
     }
   }
 
   const handleAddRoom = () => {
-    if (newRoom.id.trim() && selectedBuilding) {
-      const updatedBuildings = [...buildings]
-      const buildingIndex = updatedBuildings.findIndex((b) => b.name === selectedBuilding)
+    if (newRoom.id.trim() && selectedFloor) {
+      const updatedFloors = [...floors]
+      const floorIndex = updatedFloors.findIndex((b) => b.name === selectedFloor)
 
-      if (buildingIndex !== -1) {
-        updatedBuildings[buildingIndex].rooms.push({ ...newRoom, id: newRoom.id.trim() })
-        setBuildings(updatedBuildings)
+      if (floorIndex !== -1) {
+        updatedFloors[floorIndex].rooms.push({ ...newRoom, id: newRoom.id.trim() })
+        setFloors(updatedFloors)
       }
 
       setNewRoom({ id: "", beds: 2, occupants: [], notes: "" })
@@ -227,23 +320,51 @@ export default function RoomsPage() {
     }
   }
 
-  // Render the building content based on the selected building
-  const renderBuildingContent = () => {
-    const building = buildings.find((b) => b.name === selectedBuilding)
-    if (!building) return null
+  const handleUpdateSpecialNeeds = () => {
+    if (!selectedGroup) return
+
+    const updatedGroups = unassignedGroups.map((group) => (group.id === selectedGroup.id ? selectedGroup : group))
+
+    setUnassignedGroups(updatedGroups)
+    setSpecialNeedsDialogOpen(false)
+
+    // Save special needs
+    const specialNeeds: Record<number, { needsAccessible?: boolean; needsFirstFloor?: boolean; notes?: string }> = {}
+    updatedGroups.forEach((group) => {
+      specialNeeds[group.id] = group.specialNeeds
+    })
+    localStorage.setItem(SPECIAL_NEEDS_STORAGE_KEY, JSON.stringify(specialNeeds))
+  }
+
+  // Helper functions to get groups for specific rooms
+  const getFloorRooms = (floorName: string) => {
+    const floor = floors.find((b) => b.name === floorName)
+    return floor ? floor.rooms : []
+  }
+
+  // Get the selected floor safely
+  const selectedFloorData = floors.find((b) => b.name === selectedFloor)
+
+  // Render the floor content based on the selected floor
+  const renderFloorContent = () => {
+    const floor = floors.find((b) => b.name === selectedFloor)
+    if (!floor) return null
 
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
-        {building.rooms.map((room) => (
+        {floor.rooms.map((room) => (
           <div
             key={room.id}
-            className={`border rounded-lg p-3 md:p-6 bg-white shadow-sm ${room.accessible ? "border-blue-300" : ""}`}
+            className={`border rounded-lg p-3 md:p-6 bg-white shadow-sm ${
+              room.accessible ? "border-blue-300" : ""
+            } ${room.firstFloor ? "border-green-300" : ""}`}
           >
             <div className="flex justify-between items-start mb-3 md:mb-4">
               <div>
-                <h3 className="text-lg md:text-xl font-semibold">
+                <h3 className="text-lg md:text-xl font-semibold flex items-center gap-2">
                   Room {room.id}
-                  {room.accessible && <span className="ml-2 text-blue-500">♿</span>}
+                  {room.accessible && <span className="text-blue-500">♿</span>}
+                  {room.firstFloor && <span className="text-green-500">1F</span>}
                 </h3>
                 <p className="text-base md:text-lg">
                   {room.beds} {language === "en" ? "beds" : "lits"}
@@ -257,7 +378,7 @@ export default function RoomsPage() {
                   size="sm"
                   onClick={() => {
                     setEditingRoom(room)
-                    setEditingBuilding(building.name)
+                    setEditingFloor(floor.name)
                     setDialogOpen(true)
                   }}
                 >
@@ -265,7 +386,7 @@ export default function RoomsPage() {
                 </Button>
 
                 <Select
-                  onValueChange={(value) => handleAssignRoom(building.name, room.id, Number.parseInt(value))}
+                  onValueChange={(value) => handleAssignRoom(floor.name, room.id, Number.parseInt(value))}
                   disabled={room.occupants.length >= room.beds}
                 >
                   <SelectTrigger className="w-24 md:w-48 text-sm md:text-lg">
@@ -278,11 +399,12 @@ export default function RoomsPage() {
                         value={group.id.toString()}
                         disabled={
                           group.members.length > room.beds - room.occupants.length ||
-                          (group.needsAccessible && !room.accessible)
+                          (group.specialNeeds.needsAccessible && !room.accessible) ||
+                          (group.specialNeeds.needsFirstFloor && !room.firstFloor)
                         }
                       >
-                        {group.name} ({group.members.length}){group.prefersSingle && " ⭐"}
-                        {group.needsAccessible && " ♿"}
+                        {group.name} ({group.members.length}){group.specialNeeds.needsAccessible && " ♿"}
+                        {group.specialNeeds.needsFirstFloor && " 1F"}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -302,7 +424,7 @@ export default function RoomsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => handleRemoveOccupant(building.name, room.id, occupant)}
+                        onClick={() => handleRemoveOccupant(floor.name, room.id, occupant)}
                       >
                         <Trash2 className="h-3 w-3 md:h-4 md:w-4 text-red-500" />
                       </Button>
@@ -339,7 +461,7 @@ export default function RoomsPage() {
   if (error) {
     return (
       <div>
-        <h1 className="text-3xl font-bold mb-6">{language === "en" ? "Room Assignments" : "Chambres"}</h1>
+        <h1 className="text-3xl font-bold mb-6">{language === "en" ? "Lodging" : "Hébergement"}</h1>
         <div className="bg-red-50 border border-red-200 p-4 rounded-lg mb-6 flex items-start">
           <AlertTriangle className="h-5 w-5 text-red-500 mr-2 mt-0.5" />
           <div>
@@ -356,119 +478,143 @@ export default function RoomsPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-6">{language === "en" ? "Room Assignments" : "Chambres"}</h1>
+      <h1 className="text-3xl font-bold mb-6">{language === "en" ? "Lodging" : "Hébergement"}</h1>
 
       <DataStatus language={language} />
 
       <div className="flex justify-between items-center mb-6">
-        <Tabs value={selectedBuilding} onValueChange={setSelectedBuilding}>
-          <TabsList className="mb-6 text-lg">
-            {buildings.map((building) => (
-              <TabsTrigger key={building.name} value={building.name} className="text-lg px-6 py-3">
-                {building.name}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+        <div className="flex items-center gap-4">
+          <Tabs value={selectedFloor} onValueChange={setSelectedFloor}>
+            <TabsList className="mb-6 text-lg">
+              {floors.map((floor) => (
+                <TabsTrigger key={floor.name} value={floor.name} className="text-lg px-6 py-3">
+                  {floor.name}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
 
-          {/* Move TabsContent inside the Tabs component */}
-          {buildings.map((building) => (
-            <TabsContent key={building.name} value={building.name}>
-              {renderBuildingContent()}
-            </TabsContent>
-          ))}
-        </Tabs>
-
-        <div className="flex gap-2">
-          <Dialog open={newRoomDialogOpen} onOpenChange={setNewRoomDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline">
-                <Plus className="h-4 w-4 mr-2" />
-                {language === "en" ? "Add Room" : "Ajouter une chambre"}
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[500px]">
-              <DialogHeader>
-                <DialogTitle className="text-xl">
-                  {language === "en" ? "Add New Room" : "Ajouter une nouvelle chambre"}
-                </DialogTitle>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="roomId">{language === "en" ? "Room ID" : "ID de la chambre"}</Label>
-                  <Input
-                    id="roomId"
-                    value={newRoom.id}
-                    onChange={(e) => setNewRoom({ ...newRoom, id: e.target.value })}
-                    placeholder="e.g. A5"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="beds">{language === "en" ? "Number of Beds" : "Nombre de lits"}</Label>
-                  <Input
-                    id="beds"
-                    type="number"
-                    min="1"
-                    value={newRoom.beds}
-                    onChange={(e) => setNewRoom({ ...newRoom, beds: Number.parseInt(e.target.value) || 1 })}
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <Checkbox
-                    id="accessible"
-                    checked={newRoom.accessible || false}
-                    onCheckedChange={(checked) => setNewRoom({ ...newRoom, accessible: checked === true })}
-                  />
-                  <Label htmlFor="accessible">
-                    {language === "en" ? "Wheelchair Accessible" : "Accessible en fauteuil roulant"}
-                  </Label>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="notes">{language === "en" ? "Notes" : "Notes"}</Label>
-                  <Input
-                    id="notes"
-                    value={newRoom.notes}
-                    onChange={(e) => setNewRoom({ ...newRoom, notes: e.target.value })}
-                    placeholder={
-                      language === "en" ? "Any special notes about this room" : "Notes spéciales sur cette chambre"
-                    }
-                  />
-                </div>
-                <Button onClick={handleAddRoom}>{language === "en" ? "Add Room" : "Ajouter la chambre"}</Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-
-          <Dialog open={buildingDialogOpen} onOpenChange={setBuildingDialogOpen}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                {language === "en" ? "Add Building" : "Ajouter un bâtiment"}
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-[500px]">
-              <DialogHeader>
-                <DialogTitle className="text-xl">
-                  {language === "en" ? "Add New Building" : "Ajouter un nouveau bâtiment"}
-                </DialogTitle>
-              </DialogHeader>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="buildingName">{language === "en" ? "Building Name" : "Nom du bâtiment"}</Label>
-                  <Input
-                    id="buildingName"
-                    value={newBuilding.name}
-                    onChange={(e) => setNewBuilding({ ...newBuilding, name: e.target.value })}
-                    placeholder="e.g. Building D"
-                  />
-                </div>
-                <Button onClick={handleAddBuilding}>
-                  {language === "en" ? "Add Building" : "Ajouter le bâtiment"}
+          <div className="flex gap-2">
+            <Dialog open={newRoomDialogOpen} onOpenChange={setNewRoomDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  {language === "en" ? "Add Room" : "Ajouter une chambre"}
                 </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[500px]">
+                <DialogHeader>
+                  <DialogTitle className="text-xl">
+                    {language === "en" ? "Add New Room" : "Ajouter une nouvelle chambre"}
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="roomId">{language === "en" ? "Room Number" : "Numéro de chambre"}</Label>
+                    <Input
+                      id="roomId"
+                      value={newRoom.id}
+                      onChange={(e) => setNewRoom({ ...newRoom, id: e.target.value })}
+                      placeholder="e.g. 101"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="beds">{language === "en" ? "Number of Beds" : "Nombre de lits"}</Label>
+                    <Input
+                      id="beds"
+                      type="number"
+                      min="1"
+                      value={newRoom.beds}
+                      onChange={(e) => setNewRoom({ ...newRoom, beds: Number.parseInt(e.target.value) || 1 })}
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="accessible"
+                      checked={newRoom.accessible || false}
+                      onCheckedChange={(checked) => setNewRoom({ ...newRoom, accessible: checked === true })}
+                    />
+                    <Label htmlFor="accessible">
+                      {language === "en" ? "Wheelchair Accessible" : "Accessible en fauteuil roulant"}
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="firstFloor"
+                      checked={newRoom.firstFloor || false}
+                      onCheckedChange={(checked) => setNewRoom({ ...newRoom, firstFloor: checked === true })}
+                    />
+                    <Label htmlFor="firstFloor">
+                      {language === "en" ? "First Floor Room" : "Chambre au premier étage"}
+                    </Label>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="notes">{language === "en" ? "Notes" : "Notes"}</Label>
+                    <Input
+                      id="notes"
+                      value={newRoom.notes}
+                      onChange={(e) => setNewRoom({ ...newRoom, notes: e.target.value })}
+                      placeholder={
+                        language === "en" ? "Any special notes about this room" : "Notes spéciales sur cette chambre"
+                      }
+                    />
+                  </div>
+                  <Button onClick={handleAddRoom}>{language === "en" ? "Add Room" : "Ajouter la chambre"}</Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={floorDialogOpen} onOpenChange={setFloorDialogOpen}>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm">
+                  <Plus className="h-4 w-4 mr-2" />
+                  {language === "en" ? "Add Floor" : "Ajouter un étage"}
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-[500px]">
+                <DialogHeader>
+                  <DialogTitle className="text-xl">
+                    {language === "en" ? "Add New Floor" : "Ajouter un nouvel étage"}
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="grid gap-4 py-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="floorName">{language === "en" ? "Floor Name" : "Nom de l'étage"}</Label>
+                    <Input
+                      id="floorName"
+                      value={newFloor.name}
+                      onChange={(e) => setNewFloor({ ...newFloor, name: e.target.value })}
+                      placeholder="e.g. Floor 4"
+                    />
+                  </div>
+                  <Button onClick={handleAddFloor}>{language === "en" ? "Add Floor" : "Ajouter l'étage"}</Button>
+                </div>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
+
+        <Button
+          onClick={saveChanges}
+          disabled={isSaving || !hasUnsavedChanges}
+          className={hasUnsavedChanges ? "bg-green-600 hover:bg-green-700" : ""}
+        >
+          {isSaving ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              {language === "en" ? "Saving..." : "Enregistrement..."}
+            </>
+          ) : (
+            <>
+              <Save className="mr-2 h-4 w-4" />
+              {language === "en" ? "Save Changes" : "Enregistrer"}
+            </>
+          )}
+        </Button>
       </div>
+
+      {/* Floor Content */}
+      <div className="mb-8">{selectedFloorData && renderFloorContent()}</div>
 
       <div className="mt-8">
         <h2 className="text-2xl font-bold mb-4">{language === "en" ? "Unassigned Groups" : "Groupes non assignés"}</h2>
@@ -477,10 +623,10 @@ export default function RoomsPage() {
           {unassignedGroups.length > 0 ? (
             unassignedGroups.map((group) => (
               <div key={group.id} className="border rounded-lg p-4 bg-white shadow-sm">
-                <h3 className="text-lg font-semibold">
+                <h3 className="text-lg font-semibold flex items-center gap-2">
                   {group.name}
-                  {group.prefersSingle && <span className="ml-2 text-yellow-500">⭐</span>}
-                  {group.needsAccessible && <span className="ml-2 text-blue-500">♿</span>}
+                  {group.specialNeeds.needsAccessible && <span className="text-blue-500">♿</span>}
+                  {group.specialNeeds.needsFirstFloor && <span className="text-green-500">1F</span>}
                 </h3>
                 <p className="text-gray-600">
                   {group.members.length} {language === "en" ? "people" : "personnes"}
@@ -490,16 +636,38 @@ export default function RoomsPage() {
                     <li key={idx}>{member}</li>
                   ))}
                 </ul>
-                {group.prefersSingle && (
-                  <p className="text-sm text-yellow-600 mt-2">
-                    {language === "en" ? "Prefers single room" : "Préfère une chambre individuelle"}
-                  </p>
+                {(group.specialNeeds.needsAccessible ||
+                  group.specialNeeds.needsFirstFloor ||
+                  group.specialNeeds.notes) && (
+                  <div className="mt-2 text-sm">
+                    {group.specialNeeds.needsAccessible && (
+                      <p className="text-blue-600">
+                        {language === "en" ? "Needs accessible room" : "Besoin d'une chambre accessible"}
+                      </p>
+                    )}
+                    {group.specialNeeds.needsFirstFloor && (
+                      <p className="text-green-600">
+                        {language === "en" ? "Needs first floor room" : "Besoin d'une chambre au premier étage"}
+                      </p>
+                    )}
+                    {group.specialNeeds.notes && (
+                      <p className="text-gray-600 italic mt-1">{group.specialNeeds.notes}</p>
+                    )}
+                  </div>
                 )}
-                {group.needsAccessible && (
-                  <p className="text-sm text-blue-600 mt-2">
-                    {language === "en" ? "Needs accessible room" : "Besoin d'une chambre accessible"}
-                  </p>
-                )}
+                <div className="mt-3 flex justify-end">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSelectedGroup(group)
+                      setSpecialNeedsDialogOpen(true)
+                    }}
+                  >
+                    <Edit className="h-3 w-3 mr-1" />
+                    {language === "en" ? "Special Needs" : "Besoins spéciaux"}
+                  </Button>
+                </div>
               </div>
             ))
           ) : (
@@ -523,7 +691,7 @@ export default function RoomsPage() {
           {editingRoom && (
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
-                <Label htmlFor="edit-roomId">{language === "en" ? "Room ID" : "ID de la chambre"}</Label>
+                <Label htmlFor="edit-roomId">{language === "en" ? "Room Number" : "Numéro de chambre"}</Label>
                 <Input
                   id="edit-roomId"
                   value={editingRoom.id}
@@ -550,6 +718,16 @@ export default function RoomsPage() {
                   {language === "en" ? "Wheelchair Accessible" : "Accessible en fauteuil roulant"}
                 </Label>
               </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="edit-firstFloor"
+                  checked={editingRoom.firstFloor || false}
+                  onCheckedChange={(checked) => setEditingRoom({ ...editingRoom, firstFloor: checked === true })}
+                />
+                <Label htmlFor="edit-firstFloor">
+                  {language === "en" ? "First Floor Room" : "Chambre au premier étage"}
+                </Label>
+              </div>
               <div className="grid gap-2">
                 <Label htmlFor="edit-notes">{language === "en" ? "Notes" : "Notes"}</Label>
                 <Input
@@ -561,6 +739,79 @@ export default function RoomsPage() {
               <Button onClick={handleUpdateRoom}>
                 {language === "en" ? "Save Changes" : "Enregistrer les modifications"}
               </Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Special Needs Dialog */}
+      <Dialog open={specialNeedsDialogOpen} onOpenChange={setSpecialNeedsDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="text-xl">
+              {language === "en" ? "Special Needs" : "Besoins spéciaux"} - {selectedGroup?.name}
+            </DialogTitle>
+          </DialogHeader>
+          {selectedGroup && (
+            <div className="grid gap-4 py-4">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="needs-accessible"
+                  checked={selectedGroup.specialNeeds.needsAccessible || false}
+                  onCheckedChange={(checked) =>
+                    setSelectedGroup({
+                      ...selectedGroup,
+                      specialNeeds: {
+                        ...selectedGroup.specialNeeds,
+                        needsAccessible: checked === true,
+                      },
+                    })
+                  }
+                />
+                <Label htmlFor="needs-accessible">
+                  {language === "en"
+                    ? "Needs Wheelchair Accessible Room"
+                    : "Besoin d'une chambre accessible en fauteuil roulant"}
+                </Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="needs-firstFloor"
+                  checked={selectedGroup.specialNeeds.needsFirstFloor || false}
+                  onCheckedChange={(checked) =>
+                    setSelectedGroup({
+                      ...selectedGroup,
+                      specialNeeds: {
+                        ...selectedGroup.specialNeeds,
+                        needsFirstFloor: checked === true,
+                      },
+                    })
+                  }
+                />
+                <Label htmlFor="needs-firstFloor">
+                  {language === "en" ? "Needs First Floor Room" : "Besoin d'une chambre au premier étage"}
+                </Label>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="special-notes">
+                  {language === "en" ? "Additional Notes" : "Notes supplémentaires"}
+                </Label>
+                <Input
+                  id="special-notes"
+                  value={selectedGroup.specialNeeds.notes || ""}
+                  onChange={(e) =>
+                    setSelectedGroup({
+                      ...selectedGroup,
+                      specialNeeds: {
+                        ...selectedGroup.specialNeeds,
+                        notes: e.target.value,
+                      },
+                    })
+                  }
+                  placeholder={language === "en" ? "Any special accommodation needs" : "Besoins d'hébergement spéciaux"}
+                />
+              </div>
+              <Button onClick={handleUpdateSpecialNeeds}>{language === "en" ? "Save" : "Enregistrer"}</Button>
             </div>
           )}
         </DialogContent>

@@ -3,6 +3,7 @@ const translations = {
   participants: { en: "Participants", fr: "Participants" },
   roles: { en: "Roles", fr: "Rôles" },
   family: { en: "Family", fr: "Famille" },
+  lodging: { en: "Lodging", fr: "Hébergement" },
   "food-crew": { en: "Food", fr: "Repas" },
   transportation: { en: "Transportation", fr: "Transport" },
   special_considerations: { en: "Special Considerations", fr: "Besoins Spéciaux" },

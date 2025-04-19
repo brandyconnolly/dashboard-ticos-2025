@@ -69,7 +69,7 @@ export default function Sidebar() {
       icon: <UserCheck className="h-6 w-6" />,
     },
     {
-      name: getTranslation("family", language),
+      name: getTranslation("lodging", language),
       href: "/rooms",
       icon: <Home className="h-6 w-6" />,
     },
