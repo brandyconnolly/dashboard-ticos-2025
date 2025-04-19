@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import DataStatus from "@/components/data-status"
 import { Button } from "@/components/ui/button"
-import { Bus, Plus, Check, X, Search, RefreshCw } from "lucide-react"
+import { Bus, Plus, Check, X, Search } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -18,14 +18,19 @@ import { fetchSheetData, parseParticipants, parseFamilies } from "@/lib/fetch-da
 import { toast } from "@/components/ui/use-toast"
 
 // Transportation status type
-type TransportDirection = "both" | "to" | "from" | "none"
 type BoardingStatus = "boarded" | "changed-plans" | "not-boarded"
 
 interface TransportationStatus {
   participantId: string
-  direction: TransportDirection
   boardedTo: BoardingStatus
   boardedFrom: BoardingStatus
+  isManuallyAdded?: boolean
+}
+
+// Track manually excluded participants
+interface TransportationManagement {
+  excludedParticipants: string[] // IDs of participants manually removed
+  includedParticipants: string[] // IDs of participants manually added
 }
 
 export default function TransportationPage() {
@@ -33,12 +38,14 @@ export default function TransportationPage() {
   const [participants, setParticipants] = useState<Participant[]>([])
   const [families, setFamilies] = useState<Family[]>([])
   const [transportationStatus, setTransportationStatus] = useState<TransportationStatus[]>([])
+  const [transportationManagement, setTransportationManagement] = useState<TransportationManagement>({
+    excludedParticipants: [],
+    includedParticipants: [],
+  })
   const [searchQuery, setSearchQuery] = useState("")
   const [searchDialogOpen, setSearchDialogOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<"all" | "to" | "from">("all")
   const [isLoading, setIsLoading] = useState(true)
-  const [isRefreshing, setIsRefreshing] = useState(false)
-  const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Load data
@@ -62,42 +69,24 @@ export default function TransportationPage() {
 
         // Load transportation status from localStorage
         const savedTransportStatus = localStorage.getItem("retreat-transportation-status")
+        const savedTransportManagement = localStorage.getItem("retreat-transportation-management")
+
+        let transportStatus: TransportationStatus[] = []
+        let transportManagement: TransportationManagement = {
+          excludedParticipants: [],
+          includedParticipants: [],
+        }
 
         if (savedTransportStatus) {
-          setTransportationStatus(JSON.parse(savedTransportStatus))
-        } else {
-          // Initialize transportation status based on Google Sheet data
-          const initialStatus: TransportationStatus[] = []
-
-          // Check each participant's form response for transportation needs
-          for (const participant of participantsData) {
-            // Get the family to access the primary contact
-            const family = familiesData.find((f) => f.id === participant.familyId)
-            if (!family) continue
-
-            // Get the primary contact of the family
-            const primaryContact = participantsData.find((p) => p.id === family.primaryContactId)
-            if (!primaryContact) continue
-
-            // If this is the primary contact and they indicated needing bus transportation
-            if (participant.id === primaryContact.id && participant.needsTransportation) {
-              // Add all family members to transportation
-              const familyMembers = participantsData.filter((p) => p.familyId === family.id)
-
-              for (const member of familyMembers) {
-                initialStatus.push({
-                  participantId: member.id,
-                  direction: "both", // Default to both directions
-                  boardedTo: "not-boarded",
-                  boardedFrom: "not-boarded",
-                })
-              }
-            }
-          }
-
-          setTransportationStatus(initialStatus)
-          localStorage.setItem("retreat-transportation-status", JSON.stringify(initialStatus))
+          transportStatus = JSON.parse(savedTransportStatus)
         }
+
+        if (savedTransportManagement) {
+          transportManagement = JSON.parse(savedTransportManagement)
+        }
+
+        setTransportationStatus(transportStatus)
+        setTransportationManagement(transportManagement)
       } catch (error) {
         console.error("Error loading data:", error)
         setError(error instanceof Error ? error.message : String(error))
@@ -116,6 +105,11 @@ export default function TransportationPage() {
     }
   }, [transportationStatus])
 
+  // Save transportation management to localStorage whenever it changes
+  useEffect(() => {
+    localStorage.setItem("retreat-transportation-management", JSON.stringify(transportationManagement))
+  }, [transportationManagement])
+
   // Get participant by ID
   const getParticipant = (id: string) => {
     return participants.find((p) => p.id === id)
@@ -131,123 +125,36 @@ export default function TransportationPage() {
     return (
       transportationStatus.find((ts) => ts.participantId === participantId) || {
         participantId,
-        direction: "both" as TransportDirection,
         boardedTo: "not-boarded" as BoardingStatus,
         boardedFrom: "not-boarded" as BoardingStatus,
       }
     )
   }
 
-  // Refresh transportation data from Google Sheets
-  const refreshTransportationData = async () => {
-    setIsRefreshing(true)
-    try {
-      // Fetch fresh data from Google Sheets
-      const sheetData = await fetchSheetData()
-      const newParticipants = parseParticipants(sheetData)
-      const newFamilies = parseFamilies(sheetData)
-
-      setParticipants(newParticipants)
-      setFamilies(newFamilies)
-
-      // Initialize transportation status based on Google Sheet data
-      const initialStatus: TransportationStatus[] = []
-
-      // Process each row in the sheet data to find transportation needs
-      for (let i = 1; i < sheetData.length; i++) {
-        const row = sheetData[i]
-        const headers = sheetData[0]
-
-        // Find the transportation column
-        const transportIndex = headers.findIndex(
-          (h) => h && h.toLowerCase().includes("how are you getting to/from the retreat"),
-        )
-
-        if (transportIndex >= 0) {
-          const transportValue = row[transportIndex]?.toLowerCase() || ""
-
-          // Check if they need bus transportation
-          if (
-            transportValue.includes("bus") ||
-            transportValue.includes("autobus") ||
-            transportValue.includes("shuttle") ||
-            transportValue.includes("navette")
-          ) {
-            // Find the family ID for this row
-            const familyId = Math.floor((i - 1) / 7) + 1 // Approximate calculation
-
-            // Find all participants in this family
-            const familyMembers = newParticipants.filter((p) => p.familyId === familyId)
-
-            // Add all family members to transportation
-            for (const member of familyMembers) {
-              // Check if this participant is already in the transportation status
-              const existingStatus = transportationStatus.find((ts) => ts.participantId === member.id)
-
-              if (existingStatus) {
-                // Keep their existing status
-                initialStatus.push(existingStatus)
-              } else {
-                // Add with default status
-                initialStatus.push({
-                  participantId: member.id,
-                  direction: "both",
-                  boardedTo: "not-boarded",
-                  boardedFrom: "not-boarded",
-                })
-              }
-            }
-          }
-        }
-      }
-
-      setTransportationStatus(initialStatus)
-      localStorage.setItem("retreat-transportation-status", JSON.stringify(initialStatus))
-
-      toast({
-        title: language === "en" ? "Data Refreshed" : "Données rafraîchies",
-        description:
-          language === "en"
-            ? "Transportation data has been updated from Google Sheets"
-            : "Les données de transport ont été mises à jour depuis Google Sheets",
-      })
-    } catch (error) {
-      console.error("Error refreshing data:", error)
-      toast({
-        variant: "destructive",
-        title: language === "en" ? "Error" : "Erreur",
-        description:
-          language === "en"
-            ? "Failed to refresh transportation data"
-            : "Échec de l'actualisation des données de transport",
-      })
-    } finally {
-      setIsRefreshing(false)
-    }
-  }
-
   // Add a participant to transportation
-  const addParticipantToTransportation = (participant: Participant, direction: TransportDirection) => {
+  const addParticipantToTransportation = (participant: Participant) => {
     // Check if participant is already in transportation
     const existingStatus = transportationStatus.find((ts) => ts.participantId === participant.id)
 
-    if (existingStatus) {
-      // Update existing status
-      const updatedStatus = transportationStatus.map((ts) =>
-        ts.participantId === participant.id ? { ...ts, direction } : ts,
-      )
-      setTransportationStatus(updatedStatus)
-    } else {
+    if (!existingStatus) {
       // Add new status
       setTransportationStatus([
         ...transportationStatus,
         {
           participantId: participant.id,
-          direction,
           boardedTo: "not-boarded",
           boardedFrom: "not-boarded",
+          isManuallyAdded: true,
         },
       ])
+
+      // Add to included participants list
+      setTransportationManagement({
+        ...transportationManagement,
+        includedParticipants: [...transportationManagement.includedParticipants, participant.id],
+        // If they were previously excluded, remove from excluded list
+        excludedParticipants: transportationManagement.excludedParticipants.filter((id) => id !== participant.id),
+      })
     }
 
     setSearchDialogOpen(false)
@@ -277,6 +184,14 @@ export default function TransportationPage() {
   const removeFromTransportation = (participantId: string) => {
     const updatedStatus = transportationStatus.filter((ts) => ts.participantId !== participantId)
     setTransportationStatus(updatedStatus)
+
+    // Add to excluded participants list
+    setTransportationManagement({
+      ...transportationManagement,
+      excludedParticipants: [...transportationManagement.excludedParticipants, participantId],
+      // If they were previously included, remove from included list
+      includedParticipants: transportationManagement.includedParticipants.filter((id) => id !== participantId),
+    })
 
     const participant = getParticipant(participantId)
     if (participant) {
@@ -314,38 +229,27 @@ export default function TransportationPage() {
   // Filter transportation participants based on active tab
   const filteredTransportationParticipants = getTransportationParticipants().filter((item) => {
     if (activeTab === "all") return true
-    if (activeTab === "to") return item.status.direction === "both" || item.status.direction === "to"
-    if (activeTab === "from") return item.status.direction === "both" || item.status.direction === "from"
+    if (activeTab === "to") return true
+    if (activeTab === "from") return true
     return true
   })
 
-  // Group participants by family
-  const groupedByFamily = filteredTransportationParticipants.reduce(
-    (acc, item) => {
-      const participant = item.participant!
-      const familyId = participant.familyId
-
-      if (!acc[familyId]) {
-        acc[familyId] = []
-      }
-
-      acc[familyId].push(item)
-      return acc
-    },
-    {} as Record<number, typeof filteredTransportationParticipants>,
-  )
+  // Sort participants by last name
+  const sortedTransportationParticipants = [...filteredTransportationParticipants].sort((a, b) => {
+    const aName = a.participant!.name.split(" ")
+    const bName = b.participant!.name.split(" ")
+    const aLastName = aName[aName.length - 1]
+    const bLastName = bName[bName.length - 1]
+    return aLastName.localeCompare(bLastName)
+  })
 
   // Calculate statistics
   const calculateStats = (direction: "to" | "from") => {
-    const relevantParticipants = transportationStatus.filter(
-      (ts) => ts.direction === "both" || ts.direction === direction,
-    )
-
-    const total = relevantParticipants.length
-    const boarded = relevantParticipants.filter((ts) =>
+    const total = transportationStatus.length
+    const boarded = transportationStatus.filter((ts) =>
       direction === "to" ? ts.boardedTo === "boarded" : ts.boardedFrom === "boarded",
     ).length
-    const changedPlans = relevantParticipants.filter((ts) =>
+    const changedPlans = transportationStatus.filter((ts) =>
       direction === "to" ? ts.boardedTo === "changed-plans" : ts.boardedFrom === "changed-plans",
     ).length
 
@@ -446,20 +350,6 @@ export default function TransportationPage() {
           </div>
 
           <div className="flex gap-2 mt-4 md:mt-0">
-            <Button variant="outline" onClick={refreshTransportationData} disabled={isRefreshing} className="mr-2">
-              {isRefreshing ? (
-                <>
-                  <div className="animate-spin mr-2 h-4 w-4 border-2 border-b-transparent rounded-full"></div>
-                  {language === "en" ? "Refreshing..." : "Actualisation..."}
-                </>
-              ) : (
-                <>
-                  <RefreshCw className="mr-2 h-4 w-4" />
-                  {language === "en" ? "Refresh from Sheets" : "Actualiser depuis Sheets"}
-                </>
-              )}
-            </Button>
-
             <Dialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen}>
               <DialogTrigger asChild>
                 <Button size="lg" className="text-lg">
@@ -510,28 +400,9 @@ export default function TransportationPage() {
                                     {getTranslation("already_added", language)}
                                   </Badge>
                                 ) : (
-                                  <div className="flex gap-2">
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => addParticipantToTransportation(participant, "to")}
-                                    >
-                                      {getTranslation("to_only", language)}
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      onClick={() => addParticipantToTransportation(participant, "from")}
-                                    >
-                                      {getTranslation("from_only", language)}
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      onClick={() => addParticipantToTransportation(participant, "both")}
-                                    >
-                                      {getTranslation("both_ways", language)}
-                                    </Button>
-                                  </div>
+                                  <Button size="sm" onClick={() => addParticipantToTransportation(participant)}>
+                                    {getTranslation("add", language)}
+                                  </Button>
                                 )}
                               </div>
                             </li>
@@ -615,140 +486,106 @@ export default function TransportationPage() {
         </TabsList>
 
         <TabsContent value="all">
-          {Object.entries(groupedByFamily).length > 0 ? (
-            <div className="space-y-6">
-              {Object.entries(groupedByFamily).map(([familyId, members]) => {
-                const family = getFamily(Number(familyId))
-                const familyName = family?.name || `Family ID: ${familyId}`
-
-                return (
-                  <div key={familyId} className="bg-white rounded-lg shadow-sm border overflow-hidden">
-                    <div className="bg-gray-50 px-6 py-3 font-medium text-lg">{familyName}</div>
-                    <div className="responsive-table-container">
-                      <table className="w-full text-sm md:text-lg responsive-table">
-                        <thead className="bg-gray-50 border-t border-gray-200">
-                          <tr>
-                            <th className="px-6 py-3 text-left font-medium text-gray-500">
-                              {getTranslation("name", language)}
-                            </th>
-                            <th className="px-6 py-3 text-left font-medium text-gray-500">
-                              {getTranslation("direction", language)}
-                            </th>
-                            <th className="px-6 py-3 text-center font-medium text-gray-500">
-                              {getTranslation("to_status", language)}
-                            </th>
-                            <th className="px-6 py-3 text-center font-medium text-gray-500">
-                              {getTranslation("from_status", language)}
-                            </th>
-                            <th className="px-6 py-3 text-center font-medium text-gray-500">
-                              {getTranslation("actions", language)}
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                          {members.map(({ participant, status }) => (
-                            <tr key={participant!.id}>
-                              <td className="px-6 py-4 font-medium">{participant!.name}</td>
-                              <td className="px-6 py-4">
-                                {status.direction === "both" && (
-                                  <span>
-                                    {getTranslation("both_ways", language)}
-                                    <span className="ml-2">🔄</span>
-                                  </span>
-                                )}
-                                {status.direction === "to" && (
-                                  <span>
-                                    {getTranslation("to_only", language)}
-                                    <span className="ml-2">➡️</span>
-                                  </span>
-                                )}
-                                {status.direction === "from" && (
-                                  <span>
-                                    {getTranslation("from_only", language)}
-                                    <span className="ml-2">⬅️</span>
-                                  </span>
-                                )}
-                              </td>
-                              <td className="px-6 py-4 text-center">
-                                {status.direction === "both" || status.direction === "to" ? (
-                                  <div className="flex justify-center gap-2">
-                                    {getBoardingStatusBadge(status.boardedTo)}
-                                    <div className="flex gap-1">
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6"
-                                        onClick={() => updateBoardingStatus(participant!.id, "to", "boarded")}
-                                      >
-                                        <Check
-                                          className={`h-4 w-4 ${status.boardedTo === "boarded" ? "text-green-600" : ""}`}
-                                        />
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6"
-                                        onClick={() => updateBoardingStatus(participant!.id, "to", "changed-plans")}
-                                      >
-                                        <X
-                                          className={`h-4 w-4 ${status.boardedTo === "changed-plans" ? "text-orange-600" : ""}`}
-                                        />
-                                      </Button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <span className="text-gray-400">-</span>
-                                )}
-                              </td>
-                              <td className="px-6 py-4 text-center">
-                                {status.direction === "both" || status.direction === "from" ? (
-                                  <div className="flex justify-center gap-2">
-                                    {getBoardingStatusBadge(status.boardedFrom)}
-                                    <div className="flex gap-1">
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6"
-                                        onClick={() => updateBoardingStatus(participant!.id, "from", "boarded")}
-                                      >
-                                        <Check
-                                          className={`h-4 w-4 ${status.boardedFrom === "boarded" ? "text-green-600" : ""}`}
-                                        />
-                                      </Button>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-6 w-6"
-                                        onClick={() => updateBoardingStatus(participant!.id, "from", "changed-plans")}
-                                      >
-                                        <X
-                                          className={`h-4 w-4 ${status.boardedFrom === "changed-plans" ? "text-orange-600" : ""}`}
-                                        />
-                                      </Button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <span className="text-gray-400">-</span>
-                                )}
-                              </td>
-                              <td className="px-6 py-4 text-center">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => removeFromTransportation(participant!.id)}
-                                  className="text-red-500 hover:text-red-700"
-                                >
-                                  {getTranslation("remove", language)}
-                                </Button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )
-              })}
+          {sortedTransportationParticipants.length > 0 ? (
+            <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+              <div className="responsive-table-container">
+                <table className="w-full text-sm md:text-lg responsive-table">
+                  <thead className="bg-gray-50 border-t border-gray-200">
+                    <tr>
+                      <th className="px-6 py-3 text-left font-medium text-gray-500">
+                        {getTranslation("name", language)}
+                      </th>
+                      <th className="px-6 py-3 text-left font-medium text-gray-500">
+                        {getTranslation("contact", language)}
+                      </th>
+                      <th className="px-6 py-3 text-center font-medium text-gray-500">
+                        {getTranslation("to_status", language)}
+                      </th>
+                      <th className="px-6 py-3 text-center font-medium text-gray-500">
+                        {getTranslation("from_status", language)}
+                      </th>
+                      <th className="px-6 py-3 text-center font-medium text-gray-500">
+                        {getTranslation("actions", language)}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {sortedTransportationParticipants.map(({ participant, status }) => (
+                      <tr key={participant!.id}>
+                        <td className="px-6 py-4 font-medium">{participant!.name}</td>
+                        <td className="px-6 py-4">
+                          {participant!.phone || "-"}
+                          {participant!.email && <div className="text-xs text-gray-500">{participant!.email}</div>}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <div className="flex justify-center gap-2">
+                            {getBoardingStatusBadge(status.boardedTo)}
+                            <div className="flex gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => updateBoardingStatus(participant!.id, "to", "boarded")}
+                              >
+                                <Check
+                                  className={`h-4 w-4 ${status.boardedTo === "boarded" ? "text-green-600" : ""}`}
+                                />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => updateBoardingStatus(participant!.id, "to", "changed-plans")}
+                              >
+                                <X
+                                  className={`h-4 w-4 ${status.boardedTo === "changed-plans" ? "text-orange-600" : ""}`}
+                                />
+                              </Button>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <div className="flex justify-center gap-2">
+                            {getBoardingStatusBadge(status.boardedFrom)}
+                            <div className="flex gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => updateBoardingStatus(participant!.id, "from", "boarded")}
+                              >
+                                <Check
+                                  className={`h-4 w-4 ${status.boardedFrom === "boarded" ? "text-green-600" : ""}`}
+                                />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => updateBoardingStatus(participant!.id, "from", "changed-plans")}
+                              >
+                                <X
+                                  className={`h-4 w-4 ${status.boardedFrom === "changed-plans" ? "text-orange-600" : ""}`}
+                                />
+                              </Button>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeFromTransportation(participant!.id)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            {getTranslation("remove", language)}
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ) : (
             <div className="bg-white rounded-lg shadow-sm border p-8 text-center">
@@ -762,85 +599,76 @@ export default function TransportationPage() {
         </TabsContent>
 
         <TabsContent value="to">
-          {/* To retreat content - same structure as above */}
-          {Object.entries(groupedByFamily).length > 0 ? (
-            <div className="space-y-6">
-              {Object.entries(groupedByFamily).map(([familyId, members]) => {
-                const family = getFamily(Number(familyId))
-                const familyName = family?.name || `Family ID: ${familyId}`
-                const filteredMembers = members.filter(
-                  (m) => m.status.direction === "both" || m.status.direction === "to",
-                )
-
-                if (filteredMembers.length === 0) return null
-
-                return (
-                  <div key={familyId} className="bg-white rounded-lg shadow-sm border overflow-hidden">
-                    <div className="bg-gray-50 px-6 py-3 font-medium text-lg">{familyName}</div>
-                    <div className="responsive-table-container">
-                      <table className="w-full text-sm md:text-lg responsive-table">
-                        <thead className="bg-gray-50 border-t border-gray-200">
-                          <tr>
-                            <th className="px-6 py-3 text-left font-medium text-gray-500">
-                              {getTranslation("name", language)}
-                            </th>
-                            <th className="px-6 py-3 text-center font-medium text-gray-500">
-                              {getTranslation("status", language)}
-                            </th>
-                            <th className="px-6 py-3 text-center font-medium text-gray-500">
-                              {getTranslation("actions", language)}
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                          {filteredMembers.map(({ participant, status }) => (
-                            <tr key={participant!.id}>
-                              <td className="px-6 py-4 font-medium">{participant!.name}</td>
-                              <td className="px-6 py-4 text-center">
-                                <div className="flex justify-center gap-2">
-                                  {getBoardingStatusBadge(status.boardedTo)}
-                                  <div className="flex gap-1">
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-6 w-6"
-                                      onClick={() => updateBoardingStatus(participant!.id, "to", "boarded")}
-                                    >
-                                      <Check
-                                        className={`h-4 w-4 ${status.boardedTo === "boarded" ? "text-green-600" : ""}`}
-                                      />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-6 w-6"
-                                      onClick={() => updateBoardingStatus(participant!.id, "to", "changed-plans")}
-                                    >
-                                      <X
-                                        className={`h-4 w-4 ${status.boardedTo === "changed-plans" ? "text-orange-600" : ""}`}
-                                      />
-                                    </Button>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 text-center">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => removeFromTransportation(participant!.id)}
-                                  className="text-red-500 hover:text-red-700"
-                                >
-                                  {getTranslation("remove", language)}
-                                </Button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )
-              })}
+          {sortedTransportationParticipants.length > 0 ? (
+            <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+              <div className="responsive-table-container">
+                <table className="w-full text-sm md:text-lg responsive-table">
+                  <thead className="bg-gray-50 border-t border-gray-200">
+                    <tr>
+                      <th className="px-6 py-3 text-left font-medium text-gray-500">
+                        {getTranslation("name", language)}
+                      </th>
+                      <th className="px-6 py-3 text-left font-medium text-gray-500">
+                        {getTranslation("contact", language)}
+                      </th>
+                      <th className="px-6 py-3 text-center font-medium text-gray-500">
+                        {getTranslation("status", language)}
+                      </th>
+                      <th className="px-6 py-3 text-center font-medium text-gray-500">
+                        {getTranslation("actions", language)}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {sortedTransportationParticipants.map(({ participant, status }) => (
+                      <tr key={participant!.id}>
+                        <td className="px-6 py-4 font-medium">{participant!.name}</td>
+                        <td className="px-6 py-4">
+                          {participant!.phone || "-"}
+                          {participant!.email && <div className="text-xs text-gray-500">{participant!.email}</div>}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <div className="flex justify-center gap-2">
+                            {getBoardingStatusBadge(status.boardedTo)}
+                            <div className="flex gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => updateBoardingStatus(participant!.id, "to", "boarded")}
+                              >
+                                <Check
+                                  className={`h-4 w-4 ${status.boardedTo === "boarded" ? "text-green-600" : ""}`}
+                                />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => updateBoardingStatus(participant!.id, "to", "changed-plans")}
+                              >
+                                <X
+                                  className={`h-4 w-4 ${status.boardedTo === "changed-plans" ? "text-orange-600" : ""}`}
+                                />
+                              </Button>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeFromTransportation(participant!.id)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            {getTranslation("remove", language)}
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ) : (
             <div className="bg-white rounded-lg shadow-sm border p-8 text-center">
@@ -854,84 +682,76 @@ export default function TransportationPage() {
         </TabsContent>
 
         <TabsContent value="from">
-          {Object.entries(groupedByFamily).length > 0 ? (
-            <div className="space-y-6">
-              {Object.entries(groupedByFamily).map(([familyId, members]) => {
-                const family = getFamily(Number(familyId))
-                const familyName = family?.name || `Family ID: ${familyId}`
-                const filteredMembers = members.filter(
-                  (m) => m.status.direction === "both" || m.status.direction === "from",
-                )
-
-                if (filteredMembers.length === 0) return null
-
-                return (
-                  <div key={familyId} className="bg-white rounded-lg shadow-sm border overflow-hidden">
-                    <div className="bg-gray-50 px-6 py-3 font-medium text-lg">{familyName}</div>
-                    <div className="responsive-table-container">
-                      <table className="w-full text-sm md:text-lg responsive-table">
-                        <thead className="bg-gray-50 border-t border-gray-200">
-                          <tr>
-                            <th className="px-6 py-3 text-left font-medium text-gray-500">
-                              {getTranslation("name", language)}
-                            </th>
-                            <th className="px-6 py-3 text-center font-medium text-gray-500">
-                              {getTranslation("status", language)}
-                            </th>
-                            <th className="px-6 py-3 text-center font-medium text-gray-500">
-                              {getTranslation("actions", language)}
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                          {filteredMembers.map(({ participant, status }) => (
-                            <tr key={participant!.id}>
-                              <td className="px-6 py-4 font-medium">{participant!.name}</td>
-                              <td className="px-6 py-4 text-center">
-                                <div className="flex justify-center gap-2">
-                                  {getBoardingStatusBadge(status.boardedFrom)}
-                                  <div className="flex gap-1">
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-6 w-6"
-                                      onClick={() => updateBoardingStatus(participant!.id, "from", "boarded")}
-                                    >
-                                      <Check
-                                        className={`h-4 w-4 ${status.boardedFrom === "boarded" ? "text-green-600" : ""}`}
-                                      />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="icon"
-                                      className="h-6 w-6"
-                                      onClick={() => updateBoardingStatus(participant!.id, "from", "changed-plans")}
-                                    >
-                                      <X
-                                        className={`h-4 w-4 ${status.boardedFrom === "changed-plans" ? "text-orange-600" : ""}`}
-                                      />
-                                    </Button>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 text-center">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => removeFromTransportation(participant!.id)}
-                                  className="text-red-500 hover:text-red-700"
-                                >
-                                  {getTranslation("remove", language)}
-                                </Button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )
-              })}
+          {sortedTransportationParticipants.length > 0 ? (
+            <div className="bg-white rounded-lg shadow-sm border overflow-hidden">
+              <div className="responsive-table-container">
+                <table className="w-full text-sm md:text-lg responsive-table">
+                  <thead className="bg-gray-50 border-t border-gray-200">
+                    <tr>
+                      <th className="px-6 py-3 text-left font-medium text-gray-500">
+                        {getTranslation("name", language)}
+                      </th>
+                      <th className="px-6 py-3 text-left font-medium text-gray-500">
+                        {getTranslation("contact", language)}
+                      </th>
+                      <th className="px-6 py-3 text-center font-medium text-gray-500">
+                        {getTranslation("status", language)}
+                      </th>
+                      <th className="px-6 py-3 text-center font-medium text-gray-500">
+                        {getTranslation("actions", language)}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {sortedTransportationParticipants.map(({ participant, status }) => (
+                      <tr key={participant!.id}>
+                        <td className="px-6 py-4 font-medium">{participant!.name}</td>
+                        <td className="px-6 py-4">
+                          {participant!.phone || "-"}
+                          {participant!.email && <div className="text-xs text-gray-500">{participant!.email}</div>}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <div className="flex justify-center gap-2">
+                            {getBoardingStatusBadge(status.boardedFrom)}
+                            <div className="flex gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => updateBoardingStatus(participant!.id, "from", "boarded")}
+                              >
+                                <Check
+                                  className={`h-4 w-4 ${status.boardedFrom === "boarded" ? "text-green-600" : ""}`}
+                                />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6"
+                                onClick={() => updateBoardingStatus(participant!.id, "from", "changed-plans")}
+                              >
+                                <X
+                                  className={`h-4 w-4 ${status.boardedFrom === "changed-plans" ? "text-orange-600" : ""}`}
+                                />
+                              </Button>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => removeFromTransportation(participant!.id)}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            {getTranslation("remove", language)}
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           ) : (
             <div className="bg-white rounded-lg shadow-sm border p-8 text-center">
