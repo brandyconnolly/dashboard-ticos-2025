@@ -67,37 +67,84 @@ const SPECIAL_NEEDS_STORAGE_KEY = "retreat-special-needs"
 
 export default function RoomsPage() {
   const { language } = useLanguage()
+  // Update the floors state with the actual room structure from last year
   const [floors, setFloors] = useState<Floor[]>([
     {
-      name: "Floor 1",
+      name: "Building A",
       rooms: [
-        { id: "101", beds: 4, occupants: [], notes: "Near elevator" },
-        { id: "102", beds: 2, occupants: [], accessible: true, firstFloor: true, notes: "Wheelchair accessible" },
-        { id: "103", beds: 4, occupants: [], firstFloor: true, notes: "" },
+        { id: "101", beds: 2, occupants: [], firstFloor: true, notes: "" },
+        { id: "102", beds: 2, occupants: [], firstFloor: true, notes: "" },
+        { id: "103", beds: 2, occupants: [], firstFloor: true, notes: "" },
         { id: "104", beds: 2, occupants: [], firstFloor: true, notes: "" },
-      ],
-    },
-    {
-      name: "Floor 2",
-      rooms: [
-        { id: "201", beds: 4, occupants: [], notes: "" },
-        { id: "202", beds: 4, occupants: [], notes: "" },
-        { id: "203", beds: 6, occupants: [], notes: "" },
+        { id: "105", beds: 2, occupants: [], firstFloor: true, notes: "" },
+        { id: "106", beds: 2, occupants: [], firstFloor: true, notes: "" },
+        { id: "107", beds: 2, occupants: [], firstFloor: true, notes: "" },
+        { id: "108", beds: 2, occupants: [], firstFloor: true, notes: "" },
+        { id: "109", beds: 2, occupants: [], firstFloor: true, notes: "" },
+        { id: "110", beds: 2, occupants: [], firstFloor: true, notes: "" },
+        { id: "111", beds: 2, occupants: [], firstFloor: true, notes: "" },
+        { id: "112", beds: 2, occupants: [], firstFloor: true, notes: "" },
+        { id: "201", beds: 2, occupants: [], notes: "" },
+        { id: "202", beds: 2, occupants: [], notes: "" },
+        { id: "203", beds: 2, occupants: [], notes: "" },
         { id: "204", beds: 2, occupants: [], notes: "" },
+        { id: "205", beds: 2, occupants: [], notes: "" },
+        { id: "206", beds: 2, occupants: [], notes: "" },
+        { id: "207", beds: 2, occupants: [], notes: "" },
+        { id: "208", beds: 2, occupants: [], notes: "" },
+        { id: "209", beds: 2, occupants: [], notes: "" },
+        { id: "210", beds: 2, occupants: [], notes: "" },
+        { id: "211", beds: 2, occupants: [], notes: "" },
+        { id: "212", beds: 2, occupants: [], notes: "" },
       ],
     },
     {
-      name: "Floor 3",
+      name: "Building B",
       rooms: [
-        { id: "301", beds: 4, occupants: [], notes: "" },
-        { id: "302", beds: 6, occupants: [], notes: "Near restrooms" },
-        { id: "303", beds: 4, occupants: [], notes: "" },
-        { id: "304", beds: 2, occupants: [], notes: "" },
+        { id: "101", beds: 3, occupants: [], firstFloor: true, notes: "" },
+        { id: "102", beds: 3, occupants: [], firstFloor: true, notes: "" },
+        { id: "103", beds: 3, occupants: [], firstFloor: true, notes: "" },
+        { id: "104", beds: 3, occupants: [], firstFloor: true, notes: "" },
+        { id: "105", beds: 3, occupants: [], firstFloor: true, notes: "" },
+        { id: "106", beds: 3, occupants: [], firstFloor: true, notes: "" },
+        { id: "107", beds: 3, occupants: [], firstFloor: true, notes: "" },
+        { id: "108", beds: 3, occupants: [], firstFloor: true, notes: "" },
+        { id: "109", beds: 3, occupants: [], firstFloor: true, notes: "" },
+        { id: "110", beds: 3, occupants: [], firstFloor: true, notes: "" },
+        { id: "111", beds: 3, occupants: [], firstFloor: true, notes: "" },
+        { id: "112", beds: 3, occupants: [], firstFloor: true, notes: "" },
+        { id: "201", beds: 3, occupants: [], notes: "" },
+        { id: "202", beds: 3, occupants: [], notes: "" },
+        { id: "203", beds: 3, occupants: [], notes: "" },
+        { id: "204", beds: 3, occupants: [], notes: "" },
+        { id: "205", beds: 3, occupants: [], notes: "" },
+        { id: "206", beds: 3, occupants: [], notes: "" },
+        { id: "207", beds: 3, occupants: [], notes: "" },
+        { id: "208", beds: 3, occupants: [], notes: "" },
+        { id: "209", beds: 3, occupants: [], notes: "" },
+        { id: "210", beds: 3, occupants: [], notes: "" },
+        { id: "211", beds: 3, occupants: [], notes: "" },
+        { id: "212", beds: 3, occupants: [], notes: "" },
+      ],
+    },
+    {
+      name: "Building C",
+      rooms: [
+        { id: "101", beds: 4, occupants: [], firstFloor: true, notes: "" },
+        { id: "102", beds: 4, occupants: [], firstFloor: true, notes: "" },
+        { id: "103", beds: 4, occupants: [], firstFloor: true, notes: "" },
+        { id: "104", beds: 4, occupants: [], firstFloor: true, notes: "" },
+        { id: "105", beds: 4, occupants: [], firstFloor: true, notes: "" },
+        { id: "106", beds: 4, occupants: [], firstFloor: true, notes: "" },
+        { id: "107", beds: 4, occupants: [], firstFloor: true, notes: "" },
+        { id: "108", beds: 4, occupants: [], firstFloor: true, notes: "" },
+        { id: "109", beds: 4, occupants: [], firstFloor: true, notes: "" },
+        { id: "110", beds: 4, occupants: [], firstFloor: true, notes: "" },
       ],
     },
   ])
   const [unassignedGroups, setUnassignedGroups] = useState<UnassignedGroup[]>([])
-  const [selectedFloor, setSelectedFloor] = useState("Floor 1")
+  const [selectedFloor, setSelectedFloor] = useState("Building A")
   const [editingRoom, setEditingRoom] = useState<Room | null>(null)
   const [editingFloor, setEditingFloor] = useState<string | null>(null)
   const [newFloor, setNewFloor] = useState({ name: "", rooms: [] })
