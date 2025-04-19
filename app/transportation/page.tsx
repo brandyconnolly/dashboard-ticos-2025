@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import DataStatus from "@/components/data-status"
 import { Button } from "@/components/ui/button"
-import { Bus, Plus, Check, X, Search, Save } from "lucide-react"
+import { Bus, Plus, Check, X, Search, RefreshCw } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -37,6 +37,7 @@ export default function TransportationPage() {
   const [searchDialogOpen, setSearchDialogOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<"all" | "to" | "from">("all")
   const [isLoading, setIsLoading] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -65,9 +66,37 @@ export default function TransportationPage() {
         if (savedTransportStatus) {
           setTransportationStatus(JSON.parse(savedTransportStatus))
         } else {
-          // Initialize with empty transportation status
-          setTransportationStatus([])
-          localStorage.setItem("retreat-transportation-status", JSON.stringify([]))
+          // Initialize transportation status based on Google Sheet data
+          const initialStatus: TransportationStatus[] = []
+
+          // Check each participant's form response for transportation needs
+          for (const participant of participantsData) {
+            // Get the family to access the primary contact
+            const family = familiesData.find((f) => f.id === participant.familyId)
+            if (!family) continue
+
+            // Get the primary contact of the family
+            const primaryContact = participantsData.find((p) => p.id === family.primaryContactId)
+            if (!primaryContact) continue
+
+            // If this is the primary contact and they indicated needing bus transportation
+            if (participant.id === primaryContact.id && participant.needsTransportation) {
+              // Add all family members to transportation
+              const familyMembers = participantsData.filter((p) => p.familyId === family.id)
+
+              for (const member of familyMembers) {
+                initialStatus.push({
+                  participantId: member.id,
+                  direction: "both", // Default to both directions
+                  boardedTo: "not-boarded",
+                  boardedFrom: "not-boarded",
+                })
+              }
+            }
+          }
+
+          setTransportationStatus(initialStatus)
+          localStorage.setItem("retreat-transportation-status", JSON.stringify(initialStatus))
         }
       } catch (error) {
         console.error("Error loading data:", error)
@@ -107,6 +136,94 @@ export default function TransportationPage() {
         boardedFrom: "not-boarded" as BoardingStatus,
       }
     )
+  }
+
+  // Refresh transportation data from Google Sheets
+  const refreshTransportationData = async () => {
+    setIsRefreshing(true)
+    try {
+      // Fetch fresh data from Google Sheets
+      const sheetData = await fetchSheetData()
+      const newParticipants = parseParticipants(sheetData)
+      const newFamilies = parseFamilies(sheetData)
+
+      setParticipants(newParticipants)
+      setFamilies(newFamilies)
+
+      // Initialize transportation status based on Google Sheet data
+      const initialStatus: TransportationStatus[] = []
+
+      // Process each row in the sheet data to find transportation needs
+      for (let i = 1; i < sheetData.length; i++) {
+        const row = sheetData[i]
+        const headers = sheetData[0]
+
+        // Find the transportation column
+        const transportIndex = headers.findIndex(
+          (h) => h && h.toLowerCase().includes("how are you getting to/from the retreat"),
+        )
+
+        if (transportIndex >= 0) {
+          const transportValue = row[transportIndex]?.toLowerCase() || ""
+
+          // Check if they need bus transportation
+          if (
+            transportValue.includes("bus") ||
+            transportValue.includes("autobus") ||
+            transportValue.includes("shuttle") ||
+            transportValue.includes("navette")
+          ) {
+            // Find the family ID for this row
+            const familyId = Math.floor((i - 1) / 7) + 1 // Approximate calculation
+
+            // Find all participants in this family
+            const familyMembers = newParticipants.filter((p) => p.familyId === familyId)
+
+            // Add all family members to transportation
+            for (const member of familyMembers) {
+              // Check if this participant is already in the transportation status
+              const existingStatus = transportationStatus.find((ts) => ts.participantId === member.id)
+
+              if (existingStatus) {
+                // Keep their existing status
+                initialStatus.push(existingStatus)
+              } else {
+                // Add with default status
+                initialStatus.push({
+                  participantId: member.id,
+                  direction: "both",
+                  boardedTo: "not-boarded",
+                  boardedFrom: "not-boarded",
+                })
+              }
+            }
+          }
+        }
+      }
+
+      setTransportationStatus(initialStatus)
+      localStorage.setItem("retreat-transportation-status", JSON.stringify(initialStatus))
+
+      toast({
+        title: language === "en" ? "Data Refreshed" : "Données rafraîchies",
+        description:
+          language === "en"
+            ? "Transportation data has been updated from Google Sheets"
+            : "Les données de transport ont été mises à jour depuis Google Sheets",
+      })
+    } catch (error) {
+      console.error("Error refreshing data:", error)
+      toast({
+        variant: "destructive",
+        title: language === "en" ? "Error" : "Erreur",
+        description:
+          language === "en"
+            ? "Failed to refresh transportation data"
+            : "Échec de l'actualisation des données de transport",
+      })
+    } finally {
+      setIsRefreshing(false)
+    }
   }
 
   // Add a participant to transportation
@@ -170,44 +287,6 @@ export default function TransportationPage() {
             ? `${participant.name} removed from transportation list`
             : `${participant.name} retiré de la liste de transport`,
       })
-    }
-  }
-
-  // Save transportation roles to Google Sheets
-  const saveTransportationRolesToSheets = async () => {
-    setIsSaving(true)
-    try {
-      // Get participants with transportation role
-      const transportationCoordinators = participants.filter((p) => p.roles.includes("transportation"))
-
-      // Update each participant in Google Sheets
-      for (const participant of transportationCoordinators) {
-        await fetch("/api/update-participant", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(participant),
-        })
-      }
-
-      toast({
-        title: language === "en" ? "Saved to Google Sheets" : "Enregistré dans Google Sheets",
-        description:
-          language === "en"
-            ? "Transportation coordinators saved to Google Sheets"
-            : "Coordinateurs de transport enregistrés dans Google Sheets",
-      })
-    } catch (error) {
-      console.error("Error saving to Google Sheets:", error)
-      toast({
-        variant: "destructive",
-        title: language === "en" ? "Error" : "Erreur",
-        description:
-          language === "en" ? "Failed to save to Google Sheets" : "Échec de l'enregistrement dans Google Sheets",
-      })
-    } finally {
-      setIsSaving(false)
     }
   }
 
@@ -292,7 +371,7 @@ export default function TransportationPage() {
     }
   }
 
-  // Get transportation coordinators
+  // Get transportation coordinators (people with transportation role)
   const transportationCoordinators = participants.filter((p) => p.roles.includes("transportation"))
 
   if (isLoading) {
@@ -367,6 +446,20 @@ export default function TransportationPage() {
           </div>
 
           <div className="flex gap-2 mt-4 md:mt-0">
+            <Button variant="outline" onClick={refreshTransportationData} disabled={isRefreshing} className="mr-2">
+              {isRefreshing ? (
+                <>
+                  <div className="animate-spin mr-2 h-4 w-4 border-2 border-b-transparent rounded-full"></div>
+                  {language === "en" ? "Refreshing..." : "Actualisation..."}
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  {language === "en" ? "Refresh from Sheets" : "Actualiser depuis Sheets"}
+                </>
+              )}
+            </Button>
+
             <Dialog open={searchDialogOpen} onOpenChange={setSearchDialogOpen}>
               <DialogTrigger asChild>
                 <Button size="lg" className="text-lg">
@@ -469,20 +562,6 @@ export default function TransportationPage() {
                 : "Personnes assignées à gérer le transport (avec le rôle de transport)"}
             </p>
           </div>
-
-          <Button onClick={saveTransportationRolesToSheets} disabled={isSaving} className="mt-4 md:mt-0">
-            {isSaving ? (
-              <>
-                <div className="animate-spin mr-2 h-4 w-4 border-2 border-b-transparent rounded-full"></div>
-                {language === "en" ? "Saving..." : "Enregistrement..."}
-              </>
-            ) : (
-              <>
-                <Save className="mr-2 h-4 w-4" />
-                {language === "en" ? "Save to Sheets" : "Enregistrer dans Sheets"}
-              </>
-            )}
-          </Button>
         </div>
 
         <div className="mt-4">

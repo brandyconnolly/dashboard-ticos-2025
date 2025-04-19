@@ -124,6 +124,15 @@ export function parseParticipants(sheetData: string[][]) {
 
               console.log(`Adding primary contact: ${primaryName}, age: ${primaryAge}`)
 
+              // Check if they need transportation
+              const transportIndex = getColumnIndex(headers, "How are you getting to/from the retreat")
+              const needsTransportation =
+                transportIndex >= 0 &&
+                (row[transportIndex]?.toLowerCase().includes("bus") ||
+                  row[transportIndex]?.toLowerCase().includes("autobus") ||
+                  row[transportIndex]?.toLowerCase().includes("shuttle") ||
+                  row[transportIndex]?.toLowerCase().includes("navette"))
+
               // Add primary contact
               participants.push({
                 id: `p${rowIndex}_1`,
@@ -135,6 +144,7 @@ export function parseParticipants(sheetData: string[][]) {
                 phone: phone,
                 email: row[getColumnIndex(headers, "Email Address")] || "",
                 isPrimaryContact: true,
+                needsTransportation: needsTransportation, // Add this flag but don't assign the role
               })
 
               // Add other people in the party
@@ -174,6 +184,7 @@ export function parseParticipants(sheetData: string[][]) {
                       roles: [],
                       checkedIn: false,
                       isPrimaryContact: false,
+                      needsTransportation: needsTransportation, // Inherit from primary contact
                     })
                   }
                 }
@@ -188,16 +199,6 @@ export function parseParticipants(sheetData: string[][]) {
             const primaryParticipant = participants.find((p) => p.familyId === familyId && p.isPrimaryContact)
             if (primaryParticipant) {
               primaryParticipant.roles.push("setup-crew")
-            }
-          }
-
-          // Process transportation info
-          const transportIndex = getColumnIndex(headers, "How are you getting to/from the retreat")
-          if (transportIndex >= 0 && row[transportIndex]?.toLowerCase().includes("bus")) {
-            // Assign transportation role to primary contact
-            const primaryParticipant = participants.find((p) => p.familyId === familyId && p.isPrimaryContact)
-            if (primaryParticipant) {
-              primaryParticipant.roles.push("transportation")
             }
           }
 
