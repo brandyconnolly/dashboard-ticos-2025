@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import DataStatus from "@/components/data-status"
 import { Button } from "@/components/ui/button"
-import { Bus, Plus, Check, X, Search } from "lucide-react"
+import { Bus, Plus, Check, X, Search, Save } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -13,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { Participant, Family } from "@/lib/types"
 import { useLanguage } from "@/hooks/use-language"
 import { getTranslation } from "@/lib/translations"
-import { getParticipantsFromStorage, getFamiliesFromStorage, saveParticipantsToStorage } from "@/lib/storage-utils"
+import { getParticipantsFromStorage, getFamiliesFromStorage } from "@/lib/storage-utils"
 import { fetchSheetData, parseParticipants, parseFamilies } from "@/lib/fetch-data"
 import { toast } from "@/components/ui/use-toast"
 
@@ -37,6 +37,7 @@ export default function TransportationPage() {
   const [searchDialogOpen, setSearchDialogOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<"all" | "to" | "from">("all")
   const [isLoading, setIsLoading] = useState(true)
+  const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Load data
@@ -64,26 +65,9 @@ export default function TransportationPage() {
         if (savedTransportStatus) {
           setTransportationStatus(JSON.parse(savedTransportStatus))
         } else {
-          // Initialize transportation status based on Google Sheet data
-          // Look for participants with transportation information from the form
-          const initialStatus: TransportationStatus[] = []
-
-          participantsData.forEach((participant) => {
-            // Check if participant has transportation role or needs transportation
-            // This looks for the "transportation" role which might be set during parsing
-            // based on the "How are you getting to/from the retreat" field in the form
-            if (participant.roles.includes("transportation")) {
-              initialStatus.push({
-                participantId: participant.id,
-                direction: "both", // Default to both directions
-                boardedTo: "not-boarded",
-                boardedFrom: "not-boarded",
-              })
-            }
-          })
-
-          setTransportationStatus(initialStatus)
-          localStorage.setItem("retreat-transportation-status", JSON.stringify(initialStatus))
+          // Initialize with empty transportation status
+          setTransportationStatus([])
+          localStorage.setItem("retreat-transportation-status", JSON.stringify([]))
         }
       } catch (error) {
         console.error("Error loading data:", error)
@@ -126,7 +110,7 @@ export default function TransportationPage() {
   }
 
   // Add a participant to transportation
-  const addParticipantToTransportation = async (participant: Participant, direction: TransportDirection) => {
+  const addParticipantToTransportation = (participant: Participant, direction: TransportDirection) => {
     // Check if participant is already in transportation
     const existingStatus = transportationStatus.find((ts) => ts.participantId === participant.id)
 
@@ -149,49 +133,19 @@ export default function TransportationPage() {
       ])
     }
 
-    // Add transportation role to participant if they don't have it
-    if (!participant.roles.includes("transportation")) {
-      const updatedParticipant = {
-        ...participant,
-        roles: [...participant.roles, "transportation"],
-      }
-
-      const updatedParticipants = participants.map((p) => (p.id === participant.id ? updatedParticipant : p))
-
-      setParticipants(updatedParticipants)
-      saveParticipantsToStorage(updatedParticipants)
-
-      // Update Google Sheet via API
-      try {
-        const response = await fetch("/api/update-participant", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(updatedParticipant),
-        })
-
-        if (!response.ok) {
-          throw new Error("Failed to update participant in Google Sheet")
-        }
-
-        toast({
-          title: language === "en" ? "Transportation Updated" : "Transport mis à jour",
-          description:
-            language === "en"
-              ? "Participant added to transportation list"
-              : "Participant ajouté à la liste de transport",
-        })
-      } catch (error) {
-        console.error("Error updating participant in Google Sheet:", error)
-      }
-    }
-
     setSearchDialogOpen(false)
+
+    toast({
+      title: language === "en" ? "Rider Added" : "Passager ajouté",
+      description:
+        language === "en"
+          ? `${participant.name} added to transportation list`
+          : `${participant.name} ajouté à la liste de transport`,
+    })
   }
 
   // Update boarding status
-  const updateBoardingStatus = async (participantId: string, direction: "to" | "from", status: BoardingStatus) => {
+  const updateBoardingStatus = (participantId: string, direction: "to" | "from", status: BoardingStatus) => {
     const updatedStatus = transportationStatus.map((ts) => {
       if (ts.participantId === participantId) {
         return direction === "to" ? { ...ts, boardedTo: status } : { ...ts, boardedFrom: status }
@@ -200,54 +154,60 @@ export default function TransportationPage() {
     })
 
     setTransportationStatus(updatedStatus)
-
-    // Optionally update this status to Google Sheets as well
-    // This would require adding a new column in the sheet for tracking boarding status
-    // For now, we'll just store it locally
   }
 
   // Remove participant from transportation
-  const removeFromTransportation = async (participantId: string) => {
+  const removeFromTransportation = (participantId: string) => {
     const updatedStatus = transportationStatus.filter((ts) => ts.participantId !== participantId)
     setTransportationStatus(updatedStatus)
 
-    // Remove transportation role from participant
     const participant = getParticipant(participantId)
     if (participant) {
-      const updatedParticipant = {
-        ...participant,
-        roles: participant.roles.filter((r) => r !== "transportation"),
-      }
+      toast({
+        title: language === "en" ? "Rider Removed" : "Passager retiré",
+        description:
+          language === "en"
+            ? `${participant.name} removed from transportation list`
+            : `${participant.name} retiré de la liste de transport`,
+      })
+    }
+  }
 
-      const updatedParticipants = participants.map((p) => (p.id === participantId ? updatedParticipant : p))
+  // Save transportation roles to Google Sheets
+  const saveTransportationRolesToSheets = async () => {
+    setIsSaving(true)
+    try {
+      // Get participants with transportation role
+      const transportationCoordinators = participants.filter((p) => p.roles.includes("transportation"))
 
-      setParticipants(updatedParticipants)
-      saveParticipantsToStorage(updatedParticipants)
-
-      // Update Google Sheet via API
-      try {
-        const response = await fetch("/api/update-participant", {
+      // Update each participant in Google Sheets
+      for (const participant of transportationCoordinators) {
+        await fetch("/api/update-participant", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify(updatedParticipant),
+          body: JSON.stringify(participant),
         })
-
-        if (!response.ok) {
-          throw new Error("Failed to update participant in Google Sheet")
-        }
-
-        toast({
-          title: language === "en" ? "Transportation Updated" : "Transport mis à jour",
-          description:
-            language === "en"
-              ? "Participant removed from transportation list"
-              : "Participant retiré de la liste de transport",
-        })
-      } catch (error) {
-        console.error("Error updating participant in Google Sheet:", error)
       }
+
+      toast({
+        title: language === "en" ? "Saved to Google Sheets" : "Enregistré dans Google Sheets",
+        description:
+          language === "en"
+            ? "Transportation coordinators saved to Google Sheets"
+            : "Coordinateurs de transport enregistrés dans Google Sheets",
+      })
+    } catch (error) {
+      console.error("Error saving to Google Sheets:", error)
+      toast({
+        variant: "destructive",
+        title: language === "en" ? "Error" : "Erreur",
+        description:
+          language === "en" ? "Failed to save to Google Sheets" : "Échec de l'enregistrement dans Google Sheets",
+      })
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -331,6 +291,9 @@ export default function TransportationPage() {
         return <Badge variant="outline">{getTranslation("not_boarded", language)}</Badge>
     }
   }
+
+  // Get transportation coordinators
+  const transportationCoordinators = participants.filter((p) => p.roles.includes("transportation"))
 
   if (isLoading) {
     return (
@@ -490,6 +453,72 @@ export default function TransportationPage() {
               </DialogContent>
             </Dialog>
           </div>
+        </div>
+      </div>
+
+      {/* Transportation Coordinators Section */}
+      <div className="bg-white rounded-lg shadow-sm border p-6 mb-6">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-4">
+          <div>
+            <h2 className="text-xl font-bold">
+              {language === "en" ? "Transportation Coordinators" : "Coordinateurs de transport"}
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              {language === "en"
+                ? "People assigned to manage transportation (with transportation role)"
+                : "Personnes assignées à gérer le transport (avec le rôle de transport)"}
+            </p>
+          </div>
+
+          <Button onClick={saveTransportationRolesToSheets} disabled={isSaving} className="mt-4 md:mt-0">
+            {isSaving ? (
+              <>
+                <div className="animate-spin mr-2 h-4 w-4 border-2 border-b-transparent rounded-full"></div>
+                {language === "en" ? "Saving..." : "Enregistrement..."}
+              </>
+            ) : (
+              <>
+                <Save className="mr-2 h-4 w-4" />
+                {language === "en" ? "Save to Sheets" : "Enregistrer dans Sheets"}
+              </>
+            )}
+          </Button>
+        </div>
+
+        <div className="mt-4">
+          {transportationCoordinators.length > 0 ? (
+            <div className="border rounded-md overflow-hidden">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-medium text-gray-500">
+                      {language === "en" ? "Name" : "Nom"}
+                    </th>
+                    <th className="px-4 py-2 text-left font-medium text-gray-500">
+                      {language === "en" ? "Contact" : "Contact"}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {transportationCoordinators.map((coordinator) => (
+                    <tr key={coordinator.id}>
+                      <td className="px-4 py-3 font-medium">{coordinator.name}</td>
+                      <td className="px-4 py-3">
+                        {coordinator.phone && <div>{coordinator.phone}</div>}
+                        {coordinator.email && <div className="text-gray-500">{coordinator.email}</div>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="text-center p-4 border rounded-md bg-gray-50">
+              {language === "en"
+                ? "No transportation coordinators assigned. Assign the transportation role to participants in the Teams page."
+                : "Aucun coordinateur de transport assigné. Attribuez le rôle de transport aux participants dans la page Équipes."}
+            </div>
+          )}
         </div>
       </div>
 
@@ -654,6 +683,7 @@ export default function TransportationPage() {
         </TabsContent>
 
         <TabsContent value="to">
+          {/* To retreat content - same structure as above */}
           {Object.entries(groupedByFamily).length > 0 ? (
             <div className="space-y-6">
               {Object.entries(groupedByFamily).map(([familyId, members]) => {

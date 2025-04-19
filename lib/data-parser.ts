@@ -208,38 +208,8 @@ export function parseParticipants(sheetData: string[][]) {
             }
           }
 
-          // Process transportation info
-          const transportIndex = getColumnIndex(headers, "How are you getting to/from the retreat")
-          if (transportIndex >= 0) {
-            const transportValue = row[transportIndex]?.toLowerCase() || ""
-
-            // Check for bus-related keywords in different languages
-            if (
-              transportValue.includes("bus") ||
-              transportValue.includes("autobus") ||
-              transportValue.includes("shuttle") ||
-              transportValue.includes("navette")
-            ) {
-              // Assign transportation role to primary contact
-              const primaryParticipant = participants.find((p) => p.familyId === familyId && p.isPrimaryContact)
-              if (primaryParticipant) {
-                console.log(
-                  `Assigning transportation role to ${primaryParticipant.name} based on form response: "${transportValue}"`,
-                )
-                primaryParticipant.roles.push("transportation")
-              }
-
-              // If this is a family, we might want to assign transportation to all members
-              // Uncomment this if you want all family members to have transportation role
-              /*
-              participants.filter(p => p.familyId === familyId).forEach(member => {
-                if (!member.roles.includes("transportation")) {
-                  member.roles.push("transportation")
-                }
-              })
-              */
-            }
-          }
+          // Note: We're no longer automatically assigning transportation roles based on form responses
+          // This is now handled manually in the Teams page
 
           // Break out of the loop since we've processed this party size
           break
