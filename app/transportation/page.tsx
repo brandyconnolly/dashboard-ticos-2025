@@ -1,7 +1,5 @@
 "use client"
 
-import { Checkbox } from "@/components/ui/checkbox"
-
 import { useState, useEffect } from "react"
 import DataStatus from "@/components/data-status"
 import { Button } from "@/components/ui/button"
@@ -10,7 +8,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import type { Participant, Family } from "@/lib/types"
@@ -18,6 +15,7 @@ import { useLanguage } from "@/hooks/use-language"
 import { getTranslation } from "@/lib/translations"
 import { getParticipantsFromStorage, getFamiliesFromStorage, saveParticipantsToStorage } from "@/lib/storage-utils"
 import { fetchSheetData, parseParticipants, parseFamilies } from "@/lib/fetch-data"
+import { toast } from "@/components/ui/use-toast"
 
 // Transportation status type
 type TransportDirection = "both" | "to" | "from" | "none"
@@ -39,6 +37,7 @@ export default function TransportationPage() {
   const [searchDialogOpen, setSearchDialogOpen] = useState(false)
   const [activeTab, setActiveTab] = useState<"all" | "to" | "from">("all")
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   // Load data
   useEffect(() => {
@@ -61,24 +60,34 @@ export default function TransportationPage() {
 
         // Load transportation status from localStorage
         const savedTransportStatus = localStorage.getItem("retreat-transportation-status")
+
         if (savedTransportStatus) {
           setTransportationStatus(JSON.parse(savedTransportStatus))
         } else {
-          // Initialize transportation status for participants with transportation role
-          const initialStatus: TransportationStatus[] = participantsData
-            .filter((p) => p.roles.includes("transportation"))
-            .map((p) => ({
-              participantId: p.id,
-              direction: "both",
-              boardedTo: "not-boarded",
-              boardedFrom: "not-boarded",
-            }))
+          // Initialize transportation status based on Google Sheet data
+          // Look for participants with transportation information from the form
+          const initialStatus: TransportationStatus[] = []
+
+          participantsData.forEach((participant) => {
+            // Check if participant has transportation role or needs transportation
+            // This looks for the "transportation" role which might be set during parsing
+            // based on the "How are you getting to/from the retreat" field in the form
+            if (participant.roles.includes("transportation")) {
+              initialStatus.push({
+                participantId: participant.id,
+                direction: "both", // Default to both directions
+                boardedTo: "not-boarded",
+                boardedFrom: "not-boarded",
+              })
+            }
+          })
 
           setTransportationStatus(initialStatus)
           localStorage.setItem("retreat-transportation-status", JSON.stringify(initialStatus))
         }
       } catch (error) {
         console.error("Error loading data:", error)
+        setError(error instanceof Error ? error.message : String(error))
       } finally {
         setIsLoading(false)
       }
@@ -117,7 +126,7 @@ export default function TransportationPage() {
   }
 
   // Add a participant to transportation
-  const addParticipantToTransportation = (participant: Participant, direction: TransportDirection) => {
+  const addParticipantToTransportation = async (participant: Participant, direction: TransportDirection) => {
     // Check if participant is already in transportation
     const existingStatus = transportationStatus.find((ts) => ts.participantId === participant.id)
 
@@ -151,13 +160,38 @@ export default function TransportationPage() {
 
       setParticipants(updatedParticipants)
       saveParticipantsToStorage(updatedParticipants)
+
+      // Update Google Sheet via API
+      try {
+        const response = await fetch("/api/update-participant", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(updatedParticipant),
+        })
+
+        if (!response.ok) {
+          throw new Error("Failed to update participant in Google Sheet")
+        }
+
+        toast({
+          title: language === "en" ? "Transportation Updated" : "Transport mis à jour",
+          description:
+            language === "en"
+              ? "Participant added to transportation list"
+              : "Participant ajouté à la liste de transport",
+        })
+      } catch (error) {
+        console.error("Error updating participant in Google Sheet:", error)
+      }
     }
 
     setSearchDialogOpen(false)
   }
 
   // Update boarding status
-  const updateBoardingStatus = (participantId: string, direction: "to" | "from", status: BoardingStatus) => {
+  const updateBoardingStatus = async (participantId: string, direction: "to" | "from", status: BoardingStatus) => {
     const updatedStatus = transportationStatus.map((ts) => {
       if (ts.participantId === participantId) {
         return direction === "to" ? { ...ts, boardedTo: status } : { ...ts, boardedFrom: status }
@@ -166,10 +200,14 @@ export default function TransportationPage() {
     })
 
     setTransportationStatus(updatedStatus)
+
+    // Optionally update this status to Google Sheets as well
+    // This would require adding a new column in the sheet for tracking boarding status
+    // For now, we'll just store it locally
   }
 
   // Remove participant from transportation
-  const removeFromTransportation = (participantId: string) => {
+  const removeFromTransportation = async (participantId: string) => {
     const updatedStatus = transportationStatus.filter((ts) => ts.participantId !== participantId)
     setTransportationStatus(updatedStatus)
 
@@ -185,11 +223,41 @@ export default function TransportationPage() {
 
       setParticipants(updatedParticipants)
       saveParticipantsToStorage(updatedParticipants)
+
+      // Update Google Sheet via API
+      try {
+        const response = await fetch("/api/update-participant", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(updatedParticipant),
+        })
+
+        if (!response.ok) {
+          throw new Error("Failed to update participant in Google Sheet")
+        }
+
+        toast({
+          title: language === "en" ? "Transportation Updated" : "Transport mis à jour",
+          description:
+            language === "en"
+              ? "Participant removed from transportation list"
+              : "Participant retiré de la liste de transport",
+        })
+      } catch (error) {
+        console.error("Error updating participant in Google Sheet:", error)
+      }
     }
   }
 
   // Filter participants based on search query
-  const filteredParticipants = participants.filter((p) => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+  const filteredParticipants = participants.filter(
+    (p) =>
+      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.email && p.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (p.phone && p.phone.toLowerCase().includes(searchQuery.toLowerCase())),
+  )
 
   // Get participants with transportation status
   const getTransportationParticipants = () => {
@@ -272,8 +340,20 @@ export default function TransportationPage() {
     )
   }
 
+  if (error) {
+    return (
+      <div className="p-6">
+        <h1 className="text-3xl font-bold mb-6">{getTranslation("transportation", language)}</h1>
+        <div className="bg-red-50 border border-red-200 p-4 rounded-lg mb-6">
+          <p className="text-red-700 font-medium">{getTranslation("error_loading_data", language)}</p>
+          <p className="text-red-600">{error}</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div>
+    <div className="p-6">
       <h1 className="text-3xl font-bold mb-6">{getTranslation("transportation", language)}</h1>
 
       <DataStatus language={language} />
@@ -755,65 +835,6 @@ export default function TransportationPage() {
           )}
         </TabsContent>
       </Tabs>
-
-      {/* Edit Rider Dialog */}
-      <Dialog open={false} onOpenChange={() => {}}>
-        <DialogContent className="sm:max-w-[500px]">
-          <DialogHeader>
-            <DialogTitle className="text-xl">{"" ? "Edit Bus Rider" : "Modifier le passager"}</DialogTitle>
-          </DialogHeader>
-          {false && (
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="edit-name">{"" ? "Name / Group" : "Nom / Groupe"}</Label>
-                <Input id="edit-name" value={""} onChange={(e) => {}} />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="edit-phone">{"" ? "Contact Phone" : "Téléphone"}</Label>
-                <Input id="edit-phone" value={""} onChange={(e) => {}} />
-              </div>
-              <div className="grid gap-2">
-                <Label>{"" ? "Direction" : "Direction"}</Label>
-                <RadioGroup value={""} onValueChange={(value) => {}}>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="both" id="edit-both" />
-                    <Label htmlFor="edit-both">{"" ? "Both ways" : "Aller-retour"} 🔄</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="to" id="edit-to" />
-                    <Label htmlFor="edit-to">{"" ? "To retreat only" : "Aller seulement"} ➡️</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="from" id="edit-from" />
-                    <Label htmlFor="edit-from">{"" ? "From retreat only" : "Retour seulement"} ⬅️</Label>
-                  </div>
-                </RadioGroup>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="edit-adultSeats">{"" ? "Adult Seats" : "Sièges Adultes"}</Label>
-                  <Input id="edit-adultSeats" type="number" min="0" value={""} onChange={(e) => {}} />
-                </div>
-                <div>
-                  <Label htmlFor="edit-childSeats">{"" ? "Child Seats" : "Sièges Enfants"}</Label>
-                  <Input id="edit-childSeats" type="number" min="0" value={""} onChange={(e) => {}} />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center space-x-2">
-                  <Checkbox id="edit-boardedTo" checked={false} onCheckedChange={(checked) => {}} />
-                  <Label htmlFor="edit-boardedTo">{"" ? "Boarded to retreat" : "Embarqué pour l'aller"}</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Checkbox id="edit-boardedFrom" checked={false} onCheckedChange={(checked) => {}} />
-                  <Label htmlFor="edit-boardedFrom">{"" ? "Boarded from retreat" : "Embarqué pour le retour"}</Label>
-                </div>
-              </div>
-              <Button onClick={() => {}}>{"" ? "Save Changes" : "Enregistrer les modifications"}</Button>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
