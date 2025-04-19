@@ -26,6 +26,8 @@ import {
   Building,
   ArrowRight,
   CheckCircle2,
+  X,
+  SearchX,
 } from "lucide-react"
 import Link from "next/link"
 import { parseParticipants, parseFamilies } from "@/lib/fetch-data"
@@ -159,6 +161,8 @@ export default function RoomsPage() {
   const [error, setError] = useState<string | null>(null)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [draggedGroup, setDraggedGroup] = useState<UnassignedGroup | null>(null)
+  // Add a new state for the search query after the other state declarations
+  const [searchQuery, setSearchQuery] = useState<string>("")
 
   // Fetch data directly in the component
   useEffect(() => {
@@ -473,6 +477,21 @@ export default function RoomsPage() {
     setDraggedGroup(null)
   }
 
+  // Add a function to filter unassigned groups based on search query
+  const filteredUnassignedGroups = unassignedGroups.filter((group) => {
+    if (!searchQuery.trim()) return true
+
+    const query = searchQuery.toLowerCase().trim()
+
+    // Search in group name
+    if (group.name.toLowerCase().includes(query)) return true
+
+    // Search in member names
+    if (group.members.some((member) => member.toLowerCase().includes(query))) return true
+
+    return false
+  })
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -769,9 +788,29 @@ export default function RoomsPage() {
               </h2>
             </div>
 
+            <div className="mb-4 relative">
+              <Input
+                type="text"
+                placeholder={language === "en" ? "Search participants..." : "Rechercher des participants..."}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pr-8"
+              />
+              {searchQuery && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
+                  onClick={() => setSearchQuery("")}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
+
             <div className="space-y-3">
-              {unassignedGroups.length > 0 ? (
-                unassignedGroups.map((group) => (
+              {filteredUnassignedGroups.length > 0 ? (
+                filteredUnassignedGroups.map((group) => (
                   <Card
                     key={group.id}
                     className="border hover:border-gray-400 transition-colors cursor-move"
@@ -830,6 +869,15 @@ export default function RoomsPage() {
                     </CardFooter>
                   </Card>
                 ))
+              ) : searchQuery ? (
+                <div className="text-center p-8 bg-gray-50 rounded-lg">
+                  <SearchX className="h-8 w-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-gray-500">
+                    {language === "en"
+                      ? `No results found for "${searchQuery}"`
+                      : `Aucun résultat trouvé pour "${searchQuery}"`}
+                  </p>
+                </div>
               ) : (
                 <div className="text-center p-8 bg-gray-50 rounded-lg">
                   <CheckCircle2 className="h-8 w-8 text-green-500 mx-auto mb-2" />
