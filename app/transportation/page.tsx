@@ -165,48 +165,37 @@ export default function TransportationPage() {
 
   // Check if a family needs transportation based on form responses
   function checkFamilyNeedsTransportation(primaryContact: Participant, family: Family): boolean {
-    // Check if the primary contact has a comment or email indicating bus transportation
+    // Check for specific bus transportation request in form fields
+
+    // Check if the primary contact has a transportation field indicating bus request
+    if (
+      primaryContact.transportation === "bus" ||
+      primaryContact.transportation === "yes" ||
+      primaryContact.transportation === true
+    ) {
+      return true
+    }
+
+    // Check if there's a busTransportation field
+    if (primaryContact.busTransportation === "yes" || primaryContact.busTransportation === true) {
+      return true
+    }
+
+    // Check if there's a needsBus field
+    if (primaryContact.needsBus === "yes" || primaryContact.needsBus === true) {
+      return true
+    }
+
+    // Check if there's a specific comment about needing the bus
     if (primaryContact.comments) {
       const lowerComments = primaryContact.comments.toLowerCase()
       if (
-        lowerComments.includes("bus") ||
-        lowerComments.includes("transport") ||
-        lowerComments.includes("autobus") ||
-        lowerComments.includes("navette")
+        (lowerComments.includes("bus") && !lowerComments.includes("no bus")) ||
+        (lowerComments.includes("need") && lowerComments.includes("transport")) ||
+        (lowerComments.includes("besoin") && lowerComments.includes("autobus"))
       ) {
         return true
       }
-    }
-
-    // Check if the email contains transportation keywords
-    if (primaryContact.email) {
-      const lowerEmail = primaryContact.email.toLowerCase()
-      if (
-        lowerEmail.includes("bus") ||
-        lowerEmail.includes("transport") ||
-        lowerEmail.includes("autobus") ||
-        lowerEmail.includes("navette")
-      ) {
-        return true
-      }
-    }
-
-    // Check if the phone contains transportation keywords
-    if (primaryContact.phone) {
-      const lowerPhone = primaryContact.phone.toLowerCase()
-      if (
-        lowerPhone.includes("bus") ||
-        lowerPhone.includes("transport") ||
-        lowerPhone.includes("autobus") ||
-        lowerPhone.includes("navette")
-      ) {
-        return true
-      }
-    }
-
-    // If the primary contact has a transportation role, include them
-    if (primaryContact.roles.includes("transportation")) {
-      return true
     }
 
     // Default to not needing transportation
