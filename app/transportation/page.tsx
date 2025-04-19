@@ -401,49 +401,54 @@ export default function TransportationPage() {
     return true
   })
 
-  // Sort participants by last name
-  const sortedTransportationParticipants = [...filteredTransportationParticipants].sort((a, b) => {
-    const aName = a.participant!.name.split(" ")
-    const bName = b.participant!.name.split(" ")
-    const aLastName = aName[aName.length - 1]
-    const bLastName = bName[bName.length - 1]
-    return aLastName.localeCompare(bLastName)
-  })
-
-  // Calculate statistics
-  const calculateStats = (direction: "to" | "from") => {
-    const total = transportationStatus.length
-    const boarded = transportationStatus.filter((ts) =>
-      direction === "to" ? ts.boardedTo === "boarded" : ts.boardedFrom === "boarded",
-    ).length
-    const changedPlans = transportationStatus.filter((ts) =>
-      direction === "to" ? ts.boardedTo === "changed-plans" : ts.boardedFrom === "changed-plans",
-    ).length
-
-    return { total, boarded, changedPlans }
+  // Add this helper function after the component declaration but before the useEffect
+  const getLastName = (name: string) => {
+    const parts = name.split(" ")
+    return parts.length > 1 ? parts[parts.length - 1] : name
   }
 
-  const toStats = calculateStats("to")
-  const fromStats = calculateStats("from")
+  // Replace the sortedTransportationParticipants function with this improved version
+  const sortedTransportationParticipants = [...filteredTransportationParticipants].sort((a, b) => {
+    if (!a.participant || !b.participant) return 0
+    const lastNameA = getLastName(a.participant.name)
+    const lastNameB = getLastName(b.participant.name)
+    return lastNameA.localeCompare(lastNameB)
+  })
 
-  // Get boarding status badge
+  // Also sort the transportation coordinators
+  // Find the transportationCoordinators declaration and add sorting after it
+  const transportationCoordinators = participants
+    .filter((p) => p.roles.includes("transportation"))
+    .sort((a, b) => {
+      const lastNameA = getLastName(a.name)
+      const lastNameB = getLastName(b.name)
+      return lastNameA.localeCompare(lastNameB)
+    })
+
+  // Calculate transportation statistics
+  const toStats = {
+    total: transportationStatus.length,
+    boarded: transportationStatus.filter((ts) => ts.boardedTo === "boarded").length,
+    changedPlans: transportationStatus.filter((ts) => ts.boardedTo === "changed-plans").length,
+  }
+
+  const fromStats = {
+    total: transportationStatus.length,
+    boarded: transportationStatus.filter((ts) => ts.boardedFrom === "boarded").length,
+    changedPlans: transportationStatus.filter((ts) => ts.boardedFrom === "changed-plans").length,
+  }
+
+  // Helper function to render boarding status badge
   const getBoardingStatusBadge = (status: BoardingStatus) => {
     switch (status) {
       case "boarded":
-        return <Badge className="bg-green-600">{getTranslation("boarded", language)}</Badge>
+        return <Badge variant="outline">{language === "en" ? "Boarded" : "Embarqué"}</Badge>
       case "changed-plans":
-        return (
-          <Badge variant="outline" className="border-orange-500 text-orange-600">
-            {getTranslation("changed_plans", language)}
-          </Badge>
-        )
+        return <Badge variant="secondary">{language === "en" ? "Changed Plans" : "Changement de plans"}</Badge>
       default:
-        return <Badge variant="outline">{getTranslation("not_boarded", language)}</Badge>
+        return <Badge>{language === "en" ? "Not Boarded" : "Non monté à bord"}</Badge>
     }
   }
-
-  // Get transportation coordinators (people with transportation role)
-  const transportationCoordinators = participants.filter((p) => p.roles.includes("transportation"))
 
   if (isLoading) {
     return (

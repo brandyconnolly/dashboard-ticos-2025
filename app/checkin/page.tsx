@@ -267,11 +267,25 @@ export default function CheckinPage() {
     }
   }
 
-  const filteredAttendees = attendees.filter(
-    (family) =>
-      family.family.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      family.members.some((member) => member.name.toLowerCase().includes(searchTerm.toLowerCase())),
-  )
+  // Add this helper function after the component declaration but before the useEffect
+  const getLastName = (name: string) => {
+    const parts = name.split(" ")
+    return parts.length > 1 ? parts[parts.length - 1] : name
+  }
+
+  // Find the filteredAttendees declaration and replace it with this sorted version
+  const filteredAttendees = attendees
+    .filter(
+      (family) =>
+        family.family.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        family.members.some((member) => member.name.toLowerCase().includes(searchTerm.toLowerCase())),
+    )
+    // Sort by the last name of the family name
+    .sort((a, b) => {
+      const lastNameA = getLastName(a.family)
+      const lastNameB = getLastName(b.family)
+      return lastNameA.localeCompare(lastNameB)
+    })
 
   if (isLoading) {
     return (
