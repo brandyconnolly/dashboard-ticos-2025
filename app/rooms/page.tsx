@@ -1,15 +1,32 @@
 "use client"
 
+import type React from "react"
+
 import { useState, useEffect } from "react"
 import DataStatus from "@/components/data-status"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import { Edit, Plus, Trash2, AlertTriangle, Save, Loader2 } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import {
+  Edit,
+  Plus,
+  Trash2,
+  AlertTriangle,
+  Save,
+  Loader2,
+  Users,
+  Bed,
+  ShipWheelIcon as Wheelchair,
+  Building,
+  ArrowRight,
+  CheckCircle2,
+} from "lucide-react"
 import Link from "next/link"
 import { parseParticipants, parseFamilies } from "@/lib/fetch-data"
 import type { Family } from "@/lib/types"
@@ -94,6 +111,7 @@ export default function RoomsPage() {
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [draggedGroup, setDraggedGroup] = useState<UnassignedGroup | null>(null)
 
   // Fetch data directly in the component
   useEffect(() => {
@@ -336,115 +354,76 @@ export default function RoomsPage() {
     localStorage.setItem(SPECIAL_NEEDS_STORAGE_KEY, JSON.stringify(specialNeeds))
   }
 
-  // Helper functions to get groups for specific rooms
-  const getFloorRooms = (floorName: string) => {
-    const floor = floors.find((b) => b.name === floorName)
-    return floor ? floor.rooms : []
+  // Helper function to get room occupancy status
+  const getRoomStatus = (room: Room) => {
+    if (room.occupants.length === 0) return "empty"
+    if (room.occupants.length === room.beds) return "full"
+    return "partial"
   }
 
-  // Get the selected floor safely
-  const selectedFloorData = floors.find((b) => b.name === selectedFloor)
+  // Helper function to get room status color
+  const getRoomStatusColor = (status: string) => {
+    switch (status) {
+      case "empty":
+        return "bg-gray-100"
+      case "partial":
+        return "bg-yellow-50"
+      case "full":
+        return "bg-green-50"
+      default:
+        return "bg-white"
+    }
+  }
 
-  // Render the floor content based on the selected floor
-  const renderFloorContent = () => {
-    const floor = floors.find((b) => b.name === selectedFloor)
-    if (!floor) return null
+  // Helper function to handle drag start
+  const handleDragStart = (group: UnassignedGroup) => {
+    setDraggedGroup(group)
+  }
 
-    return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
-        {floor.rooms.map((room) => (
-          <div
-            key={room.id}
-            className={`border rounded-lg p-3 md:p-6 bg-white shadow-sm ${
-              room.accessible ? "border-blue-300" : ""
-            } ${room.firstFloor ? "border-green-300" : ""}`}
-          >
-            <div className="flex justify-between items-start mb-3 md:mb-4">
-              <div>
-                <h3 className="text-lg md:text-xl font-semibold flex items-center gap-2">
-                  Room {room.id}
-                  {room.accessible && <span className="text-blue-500">♿</span>}
-                  {room.firstFloor && <span className="text-green-500">1F</span>}
-                </h3>
-                <p className="text-base md:text-lg">
-                  {room.beds} {language === "en" ? "beds" : "lits"}
-                </p>
-                {room.notes && <p className="text-xs md:text-sm text-gray-500">{room.notes}</p>}
-              </div>
+  // Helper function to handle drag over
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+  }
 
-              <div className="flex gap-1 md:gap-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    setEditingRoom(room)
-                    setEditingFloor(floor.name)
-                    setDialogOpen(true)
-                  }}
-                >
-                  <Edit className="h-3 w-3 md:h-4 md:w-4" />
-                </Button>
+  // Helper function to handle drop
+  const handleDrop = (e: React.DragEvent, floorName: string, roomId: string) => {
+    e.preventDefault()
+    if (!draggedGroup) return
 
-                <Select
-                  onValueChange={(value) => handleAssignRoom(floor.name, room.id, Number.parseInt(value))}
-                  disabled={room.occupants.length >= room.beds}
-                >
-                  <SelectTrigger className="w-24 md:w-48 text-sm md:text-lg">
-                    <SelectValue placeholder={language === "en" ? "Assign" : "Assigner"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {unassignedGroups.map((group) => (
-                      <SelectItem
-                        key={group.id}
-                        value={group.id.toString()}
-                        disabled={
-                          group.members.length > room.beds - room.occupants.length ||
-                          (group.specialNeeds.needsAccessible && !room.accessible) ||
-                          (group.specialNeeds.needsFirstFloor && !room.firstFloor)
-                        }
-                      >
-                        {group.name} ({group.members.length}){group.specialNeeds.needsAccessible && " ♿"}
-                        {group.specialNeeds.needsFirstFloor && " 1F"}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+    const room = floors.find((f) => f.name === floorName)?.rooms.find((r) => r.id === roomId)
+    if (!room) return
 
-            <div className="mt-3 md:mt-4">
-              <h4 className="font-medium text-base md:text-lg mb-1 md:mb-2">
-                {language === "en" ? "Occupants" : "Occupants"}:
-              </h4>
-              {room.occupants.length > 0 ? (
-                <ul className="space-y-1 md:space-y-2">
-                  {room.occupants.map((occupant, idx) => (
-                    <li key={idx} className="flex justify-between items-center">
-                      <span className="text-sm md:text-lg truncate pr-2">{occupant}</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRemoveOccupant(floor.name, room.id, occupant)}
-                      >
-                        <Trash2 className="h-3 w-3 md:h-4 md:w-4 text-red-500" />
-                      </Button>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-gray-500 text-sm md:text-lg">
-                  {language === "en" ? "No occupants assigned" : "Aucun occupant assigné"}
-                </p>
-              )}
+    // Check if there's enough space
+    if (draggedGroup.members.length > room.beds - room.occupants.length) {
+      toast({
+        variant: "destructive",
+        title: language === "en" ? "Not enough space" : "Pas assez d'espace",
+        description:
+          language === "en"
+            ? `Room ${roomId} doesn't have enough beds for this group`
+            : `La chambre ${roomId} n'a pas assez de lits pour ce groupe`,
+      })
+      return
+    }
 
-              <p className="mt-2 text-sm md:text-lg">
-                {room.occupants.length}/{room.beds} {language === "en" ? "beds filled" : "lits occupés"}
-              </p>
-            </div>
-          </div>
-        ))}
-      </div>
-    )
+    // Check if the room meets special needs
+    if (
+      (draggedGroup.specialNeeds.needsAccessible && !room.accessible) ||
+      (draggedGroup.specialNeeds.needsFirstFloor && !room.firstFloor)
+    ) {
+      toast({
+        variant: "destructive",
+        title: language === "en" ? "Room not suitable" : "Chambre non adaptée",
+        description:
+          language === "en"
+            ? `Room ${roomId} doesn't meet the special needs of this group`
+            : `La chambre ${roomId} ne répond pas aux besoins spéciaux de ce groupe`,
+      })
+      return
+    }
+
+    handleAssignRoom(floorName, roomId, draggedGroup.id)
+    setDraggedGroup(null)
   }
 
   if (isLoading) {
@@ -478,121 +457,8 @@ export default function RoomsPage() {
 
   return (
     <div>
-      <h1 className="text-3xl font-bold mb-6">{language === "en" ? "Lodging" : "Hébergement"}</h1>
-
-      <DataStatus language={language} />
-
       <div className="flex justify-between items-center mb-6">
-        <div className="flex items-center gap-4">
-          <Tabs value={selectedFloor} onValueChange={setSelectedFloor}>
-            <TabsList className="mb-6 text-lg">
-              {floors.map((floor) => (
-                <TabsTrigger key={floor.name} value={floor.name} className="text-lg px-6 py-3">
-                  {floor.name}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-
-          <div className="flex gap-2">
-            <Dialog open={newRoomDialogOpen} onOpenChange={setNewRoomDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <Plus className="h-4 w-4 mr-2" />
-                  {language === "en" ? "Add Room" : "Ajouter une chambre"}
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[500px]">
-                <DialogHeader>
-                  <DialogTitle className="text-xl">
-                    {language === "en" ? "Add New Room" : "Ajouter une nouvelle chambre"}
-                  </DialogTitle>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="roomId">{language === "en" ? "Room Number" : "Numéro de chambre"}</Label>
-                    <Input
-                      id="roomId"
-                      value={newRoom.id}
-                      onChange={(e) => setNewRoom({ ...newRoom, id: e.target.value })}
-                      placeholder="e.g. 101"
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="beds">{language === "en" ? "Number of Beds" : "Nombre de lits"}</Label>
-                    <Input
-                      id="beds"
-                      type="number"
-                      min="1"
-                      value={newRoom.beds}
-                      onChange={(e) => setNewRoom({ ...newRoom, beds: Number.parseInt(e.target.value) || 1 })}
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="accessible"
-                      checked={newRoom.accessible || false}
-                      onCheckedChange={(checked) => setNewRoom({ ...newRoom, accessible: checked === true })}
-                    />
-                    <Label htmlFor="accessible">
-                      {language === "en" ? "Wheelchair Accessible" : "Accessible en fauteuil roulant"}
-                    </Label>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Checkbox
-                      id="firstFloor"
-                      checked={newRoom.firstFloor || false}
-                      onCheckedChange={(checked) => setNewRoom({ ...newRoom, firstFloor: checked === true })}
-                    />
-                    <Label htmlFor="firstFloor">
-                      {language === "en" ? "First Floor Room" : "Chambre au premier étage"}
-                    </Label>
-                  </div>
-                  <div className="grid gap-2">
-                    <Label htmlFor="notes">{language === "en" ? "Notes" : "Notes"}</Label>
-                    <Input
-                      id="notes"
-                      value={newRoom.notes}
-                      onChange={(e) => setNewRoom({ ...newRoom, notes: e.target.value })}
-                      placeholder={
-                        language === "en" ? "Any special notes about this room" : "Notes spéciales sur cette chambre"
-                      }
-                    />
-                  </div>
-                  <Button onClick={handleAddRoom}>{language === "en" ? "Add Room" : "Ajouter la chambre"}</Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-
-            <Dialog open={floorDialogOpen} onOpenChange={setFloorDialogOpen}>
-              <DialogTrigger asChild>
-                <Button variant="outline" size="sm">
-                  <Plus className="h-4 w-4 mr-2" />
-                  {language === "en" ? "Add Floor" : "Ajouter un étage"}
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-[500px]">
-                <DialogHeader>
-                  <DialogTitle className="text-xl">
-                    {language === "en" ? "Add New Floor" : "Ajouter un nouvel étage"}
-                  </DialogTitle>
-                </DialogHeader>
-                <div className="grid gap-4 py-4">
-                  <div className="grid gap-2">
-                    <Label htmlFor="floorName">{language === "en" ? "Floor Name" : "Nom de l'étage"}</Label>
-                    <Input
-                      id="floorName"
-                      value={newFloor.name}
-                      onChange={(e) => setNewFloor({ ...newFloor, name: e.target.value })}
-                      placeholder="e.g. Floor 4"
-                    />
-                  </div>
-                  <Button onClick={handleAddFloor}>{language === "en" ? "Add Floor" : "Ajouter l'étage"}</Button>
-                </div>
-              </DialogContent>
-            </Dialog>
-          </div>
-        </div>
+        <h1 className="text-3xl font-bold">{language === "en" ? "Lodging" : "Hébergement"}</h1>
 
         <Button
           onClick={saveChanges}
@@ -613,70 +479,320 @@ export default function RoomsPage() {
         </Button>
       </div>
 
-      {/* Floor Content */}
-      <div className="mb-8">{selectedFloorData && renderFloorContent()}</div>
+      <DataStatus language={language} />
 
-      <div className="mt-8">
-        <h2 className="text-2xl font-bold mb-4">{language === "en" ? "Unassigned Groups" : "Groupes non assignés"}</h2>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
-          {unassignedGroups.length > 0 ? (
-            unassignedGroups.map((group) => (
-              <div key={group.id} className="border rounded-lg p-4 bg-white shadow-sm">
-                <h3 className="text-lg font-semibold flex items-center gap-2">
-                  {group.name}
-                  {group.specialNeeds.needsAccessible && <span className="text-blue-500">♿</span>}
-                  {group.specialNeeds.needsFirstFloor && <span className="text-green-500">1F</span>}
-                </h3>
-                <p className="text-gray-600">
-                  {group.members.length} {language === "en" ? "people" : "personnes"}
-                </p>
-                <ul className="list-disc ml-6 mt-2">
-                  {group.members.map((member, idx) => (
-                    <li key={idx}>{member}</li>
-                  ))}
-                </ul>
-                {(group.specialNeeds.needsAccessible ||
-                  group.specialNeeds.needsFirstFloor ||
-                  group.specialNeeds.notes) && (
-                  <div className="mt-2 text-sm">
-                    {group.specialNeeds.needsAccessible && (
-                      <p className="text-blue-600">
-                        {language === "en" ? "Needs accessible room" : "Besoin d'une chambre accessible"}
-                      </p>
-                    )}
-                    {group.specialNeeds.needsFirstFloor && (
-                      <p className="text-green-600">
-                        {language === "en" ? "Needs first floor room" : "Besoin d'une chambre au premier étage"}
-                      </p>
-                    )}
-                    {group.specialNeeds.notes && (
-                      <p className="text-gray-600 italic mt-1">{group.specialNeeds.notes}</p>
-                    )}
-                  </div>
-                )}
-                <div className="mt-3 flex justify-end">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setSelectedGroup(group)
-                      setSpecialNeedsDialogOpen(true)
-                    }}
-                  >
-                    <Edit className="h-3 w-3 mr-1" />
-                    {language === "en" ? "Special Needs" : "Besoins spéciaux"}
-                  </Button>
-                </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+        {/* Left column: Floor selection and rooms */}
+        <div className="lg:col-span-2">
+          <div className="bg-white rounded-lg border p-4 mb-4">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center">
+                <Building className="mr-2 h-5 w-5 text-gray-500" />
+                <h2 className="text-xl font-semibold">{language === "en" ? "Floors & Rooms" : "Étages et chambres"}</h2>
               </div>
-            ))
-          ) : (
-            <div className="col-span-full text-center p-8 bg-gray-50 rounded-lg">
-              <p className="text-lg text-gray-500">
-                {language === "en" ? "All groups have been assigned rooms" : "Tous les groupes ont été assignés"}
-              </p>
+
+              <div className="flex gap-2">
+                <Dialog open={newRoomDialogOpen} onOpenChange={setNewRoomDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <Plus className="h-4 w-4 mr-2" />
+                      {language === "en" ? "Add Room" : "Ajouter une chambre"}
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[500px]">
+                    <DialogHeader>
+                      <DialogTitle className="text-xl">
+                        {language === "en" ? "Add New Room" : "Ajouter une nouvelle chambre"}
+                      </DialogTitle>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="roomId">{language === "en" ? "Room Number" : "Numéro de chambre"}</Label>
+                        <Input
+                          id="roomId"
+                          value={newRoom.id}
+                          onChange={(e) => setNewRoom({ ...newRoom, id: e.target.value })}
+                          placeholder="e.g. 101"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="beds">{language === "en" ? "Number of Beds" : "Nombre de lits"}</Label>
+                        <Input
+                          id="beds"
+                          type="number"
+                          min="1"
+                          value={newRoom.beds}
+                          onChange={(e) => setNewRoom({ ...newRoom, beds: Number.parseInt(e.target.value) || 1 })}
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="accessible"
+                          checked={newRoom.accessible || false}
+                          onCheckedChange={(checked) => setNewRoom({ ...newRoom, accessible: checked === true })}
+                        />
+                        <Label htmlFor="accessible">
+                          {language === "en" ? "Wheelchair Accessible" : "Accessible en fauteuil roulant"}
+                        </Label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="firstFloor"
+                          checked={newRoom.firstFloor || false}
+                          onCheckedChange={(checked) => setNewRoom({ ...newRoom, firstFloor: checked === true })}
+                        />
+                        <Label htmlFor="firstFloor">
+                          {language === "en" ? "First Floor Room" : "Chambre au premier étage"}
+                        </Label>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label htmlFor="notes">{language === "en" ? "Notes" : "Notes"}</Label>
+                        <Input
+                          id="notes"
+                          value={newRoom.notes}
+                          onChange={(e) => setNewRoom({ ...newRoom, notes: e.target.value })}
+                          placeholder={
+                            language === "en"
+                              ? "Any special notes about this room"
+                              : "Notes spéciales sur cette chambre"
+                          }
+                        />
+                      </div>
+                      <Button onClick={handleAddRoom}>{language === "en" ? "Add Room" : "Ajouter la chambre"}</Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+
+                <Dialog open={floorDialogOpen} onOpenChange={setFloorDialogOpen}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <Plus className="h-4 w-4 mr-2" />
+                      {language === "en" ? "Add Floor" : "Ajouter un étage"}
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="sm:max-w-[500px]">
+                    <DialogHeader>
+                      <DialogTitle className="text-xl">
+                        {language === "en" ? "Add New Floor" : "Ajouter un nouvel étage"}
+                      </DialogTitle>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                      <div className="grid gap-2">
+                        <Label htmlFor="floorName">{language === "en" ? "Floor Name" : "Nom de l'étage"}</Label>
+                        <Input
+                          id="floorName"
+                          value={newFloor.name}
+                          onChange={(e) => setNewFloor({ ...newFloor, name: e.target.value })}
+                          placeholder="e.g. Floor 4"
+                        />
+                      </div>
+                      <Button onClick={handleAddFloor}>{language === "en" ? "Add Floor" : "Ajouter l'étage"}</Button>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+              </div>
             </div>
-          )}
+
+            <Tabs value={selectedFloor} onValueChange={setSelectedFloor} className="w-full">
+              <TabsList className="mb-4 w-full justify-start overflow-x-auto">
+                {floors.map((floor) => (
+                  <TabsTrigger key={floor.name} value={floor.name} className="px-6 py-2">
+                    {floor.name}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+
+              {floors.map((floor) => (
+                <TabsContent key={floor.name} value={floor.name} className="mt-0">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {floor.rooms.map((room) => {
+                      const status = getRoomStatus(room)
+                      const statusColor = getRoomStatusColor(status)
+
+                      return (
+                        <Card
+                          key={room.id}
+                          className={`${statusColor} border-2 ${room.accessible ? "border-blue-300" : ""} ${room.firstFloor ? "border-green-300" : ""}`}
+                          onDragOver={handleDragOver}
+                          onDrop={(e) => handleDrop(e, floor.name, room.id)}
+                        >
+                          <CardHeader className="pb-2">
+                            <div className="flex justify-between items-start">
+                              <CardTitle className="text-lg flex items-center gap-2">
+                                Room {room.id}
+                                {room.accessible && <Wheelchair className="h-4 w-4 text-blue-500" />}
+                                {room.firstFloor && (
+                                  <Badge variant="outline" className="text-green-500 border-green-500">
+                                    1F
+                                  </Badge>
+                                )}
+                              </CardTitle>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => {
+                                  setEditingRoom(room)
+                                  setEditingFloor(floor.name)
+                                  setDialogOpen(true)
+                                }}
+                              >
+                                <Edit className="h-3 w-3" />
+                              </Button>
+                            </div>
+                            <div className="flex items-center text-sm text-gray-500 mt-1">
+                              <Bed className="h-4 w-4 mr-1" />
+                              <span>
+                                {room.occupants.length}/{room.beds} {language === "en" ? "beds filled" : "lits occupés"}
+                              </span>
+                              {status === "full" && <CheckCircle2 className="h-4 w-4 ml-2 text-green-500" />}
+                            </div>
+                            {room.notes && <p className="text-xs text-gray-500 mt-1">{room.notes}</p>}
+                          </CardHeader>
+
+                          <CardContent className="pb-2">
+                            {room.occupants.length > 0 ? (
+                              <ul className="space-y-1">
+                                {room.occupants.map((occupant, idx) => (
+                                  <li
+                                    key={idx}
+                                    className="flex justify-between items-center text-sm py-1 border-b border-gray-100 last:border-0"
+                                  >
+                                    <span className="truncate pr-2">{occupant}</span>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleRemoveOccupant(floor.name, room.id, occupant)}
+                                      className="h-6 w-6 p-0"
+                                    >
+                                      <Trash2 className="h-3 w-3 text-red-500" />
+                                    </Button>
+                                  </li>
+                                ))}
+                              </ul>
+                            ) : (
+                              <p className="text-gray-400 text-sm italic">
+                                {language === "en" ? "Empty room" : "Chambre vide"}
+                              </p>
+                            )}
+                          </CardContent>
+
+                          <CardFooter className="pt-2">
+                            <Select
+                              onValueChange={(value) => handleAssignRoom(floor.name, room.id, Number.parseInt(value))}
+                              disabled={room.occupants.length >= room.beds}
+                            >
+                              <SelectTrigger className="w-full text-sm">
+                                <SelectValue placeholder={language === "en" ? "Assign group" : "Assigner un groupe"} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {unassignedGroups.map((group) => (
+                                  <SelectItem
+                                    key={group.id}
+                                    value={group.id.toString()}
+                                    disabled={
+                                      group.members.length > room.beds - room.occupants.length ||
+                                      (group.specialNeeds.needsAccessible && !room.accessible) ||
+                                      (group.specialNeeds.needsFirstFloor && !room.firstFloor)
+                                    }
+                                  >
+                                    {group.name} ({group.members.length}){group.specialNeeds.needsAccessible && " ♿"}
+                                    {group.specialNeeds.needsFirstFloor && " 1F"}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </CardFooter>
+                        </Card>
+                      )
+                    })}
+                  </div>
+                </TabsContent>
+              ))}
+            </Tabs>
+          </div>
+        </div>
+
+        {/* Right column: Unassigned groups */}
+        <div className="lg:col-span-1">
+          <div className="bg-white rounded-lg border p-4">
+            <div className="flex items-center mb-4">
+              <Users className="mr-2 h-5 w-5 text-gray-500" />
+              <h2 className="text-xl font-semibold">
+                {language === "en" ? "Unassigned Groups" : "Groupes non assignés"}
+              </h2>
+            </div>
+
+            <div className="space-y-3">
+              {unassignedGroups.length > 0 ? (
+                unassignedGroups.map((group) => (
+                  <Card
+                    key={group.id}
+                    className="border hover:border-gray-400 transition-colors cursor-move"
+                    draggable
+                    onDragStart={() => handleDragStart(group)}
+                  >
+                    <CardHeader className="p-3 pb-0">
+                      <div className="flex justify-between items-start">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          {group.name}
+                          {group.specialNeeds.needsAccessible && <Wheelchair className="h-4 w-4 text-blue-500" />}
+                          {group.specialNeeds.needsFirstFloor && (
+                            <Badge variant="outline" className="text-green-500 border-green-500">
+                              1F
+                            </Badge>
+                          )}
+                        </CardTitle>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedGroup(group)
+                            setSpecialNeedsDialogOpen(true)
+                          }}
+                          className="h-6 w-6 p-0"
+                        >
+                          <Edit className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    </CardHeader>
+
+                    <CardContent className="p-3 pt-2">
+                      <div className="flex items-center text-sm text-gray-500 mb-1">
+                        <Users className="h-3 w-3 mr-1" />
+                        <span>
+                          {group.members.length} {language === "en" ? "people" : "personnes"}
+                        </span>
+                      </div>
+
+                      <ul className="text-xs space-y-0.5 ml-2 list-disc">
+                        {group.members.map((member, idx) => (
+                          <li key={idx}>{member}</li>
+                        ))}
+                      </ul>
+
+                      {group.specialNeeds.notes && (
+                        <p className="text-xs text-gray-500 mt-2 italic">{group.specialNeeds.notes}</p>
+                      )}
+                    </CardContent>
+
+                    <CardFooter className="p-3 pt-0 text-xs text-gray-500">
+                      <div className="flex items-center w-full">
+                        <ArrowRight className="h-3 w-3 mr-1" />
+                        <span>{language === "en" ? "Drag to assign" : "Glisser pour assigner"}</span>
+                      </div>
+                    </CardFooter>
+                  </Card>
+                ))
+              ) : (
+                <div className="text-center p-8 bg-gray-50 rounded-lg">
+                  <CheckCircle2 className="h-8 w-8 text-green-500 mx-auto mb-2" />
+                  <p className="text-gray-500">
+                    {language === "en" ? "All groups have been assigned rooms" : "Tous les groupes ont été assignés"}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
 
